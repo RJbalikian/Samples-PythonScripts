@@ -1,0 +1,73 @@
+import matplotlib.pyplot as plt
+import matplotlib.colors
+import csv
+import pathlib
+import pandas as pd
+
+fPath = pathlib.Path('...\ProfileF\ProfileF_1kmPts_WithElevAndVals.csv')
+
+with open(fPath) as dataFile:
+    dataRows = csv.reader(dataFile)
+    data = []
+    headers = []
+    for row in enumerate(dataRows):
+        if row[0] > 0:
+            data.append(row[1])
+        else:
+            headers.append(row[1])
+            headers = headers[0]
+
+dataFrame = pd.DataFrame(data)
+
+print(dataFrame)
+
+dataFrame = dataFrame.astype(float)
+
+dataFrame.columns = headers
+print(dataFrame)
+
+x = dataFrame.iloc[:,1]
+x = x.values
+
+y = []
+for i in range(2,22):
+    y.append(dataFrame.iloc[:,i])
+
+clr = []
+for i in range(22,42):
+    clr.append(dataFrame.iloc[:,i])
+
+print(clr)
+for i in enumerate(clr):
+    for j in enumerate(i[1]):
+        if j[1] < 10 and j[1]!=-1:
+            clr[i[0]][j[0]] = 10
+        elif j[1] == 0:
+            clr[i[0]][j[0]] = -1
+
+
+print(clr)
+
+cmap = matplotlib.colors.ListedColormap([[0,0,   0,    1],    #-1-0
+                                    [0,    0.25,  0.5,    0.25], #<10.1
+                                    [0,    0.5,  1,    1],    #<11
+                                    [0,    0.52,  0.9,  1],   #12
+                                    [0,    0.54,  0.8,  1],   #13
+                                    [0,    0.56,  0.7,  1],   #14
+                                    [0,    0.58,  0.6,  1],   #15
+                                    [0.2,  0.60, 0.55, 1],   #16
+                                    [0.4,  0.62,  0.55, 1],   #17
+                                    [0.6,  0.64, 0.55, 1],   #18
+                                    [0.7,  0.66, 0.55, 1],   #19
+                                    [0.7,  0.68, 0.55, 1],   #20
+                                    [0.8,  0.7,  0.55, 1]])  #20-25
+boundaries = [-1,0,10.1,11,12,13,14,15,16,17,18,19,20,25]
+norm = matplotlib.colors.BoundaryNorm(boundaries, cmap.N, clip=True)
+
+print(cmap)
+
+for i in range(0,20):
+    ax = plt.scatter(x,y[i],s=10,marker='s',c=clr[i],cmap=cmap, norm=norm)
+
+plt.colorbar(ax)
+plt.show()
