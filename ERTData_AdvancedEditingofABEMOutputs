@@ -1,0 +1,1556 @@
+##Written in/for Jetbrains PyCharm
+
+import math
+import pandas as pd
+import csv
+import pathlib
+import wx
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.backends.backend_wxagg as wxagg
+import re
+import numpy as np
+import scipy
+import scipy.interpolate
+import sys
+#from mpl_toolkits.mplot3d import Axes3D
+#import wx.lib.inspection as wxli
+
+class ERTAPP(wx.Frame):
+
+    def __init__(self):
+        wx.Frame.__init__(self, None, wx.ID_ANY, title='ERT Editing',pos=(100,100),size=(500,500))
+
+    #Built from template here: https://wiki.wxpython.org/GridSizerTutorial
+    #Set up Panels
+        def setUpPanels(self):
+            self.topPanel = wx.Panel(self, wx.ID_ANY,size = (1000,10),name='Top Panel')
+            self.infoPanel = wx.Panel(self, wx.ID_ANY,size = (1000,50),name='Info Panel')
+            self.chartPanel = wx.Panel(self, wx.ID_ANY,size = (1000,500),name='Chart Panel')
+            self.bottomPanel= wx.Panel(self, wx.ID_ANY,size = (1000,130),name='Bottom Panel')
+    #For details on creating panels, see here: https://stackoverflow.com/questions/31286082/matplotlib-in-wxpython-with-multiple-panels
+
+        def titleSetup(self):
+            bmp = wx.ArtProvider.GetBitmap(wx.ART_INFORMATION, wx.ART_OTHER, (4, 4))
+            self.titleIco = wx.StaticBitmap(self.topPanel, wx.ID_ANY, bmp)
+            self.title = wx.StaticText(self.topPanel, wx.ID_ANY, 'Advanced ERT Editing')
+
+    #Declare inputs for first row
+        def inputSetup(self):
+            bmp = wx.ArtProvider.GetBitmap(wx.ART_TIP, wx.ART_OTHER, (4, 4))
+            self.inputOneIco = wx.StaticBitmap(self.topPanel, wx.ID_ANY, bmp)
+            self.labelOne = wx.StaticText(self.topPanel, wx.ID_ANY, 'Input ERT Data')
+            self.inputTxtOne = wx.TextCtrl(self.topPanel, wx.ID_ANY, '')
+            self.inputTxtOne.SetHint('Enter data file path here')
+            self.inputBrowseBtn = wx.Button(self.topPanel, wx.ID_ANY, 'Browse')
+            self.Bind(wx.EVT_BUTTON, self.onBrowse, self.inputBrowseBtn)
+
+            self.readInFileBtn = wx.Button(self.topPanel, wx.ID_ANY, 'Read Data')
+            self.Bind(wx.EVT_BUTTON, self.onReadIn, self.readInFileBtn)
+
+            self.inputDataType = wx.Choice(self.topPanel, id=wx.ID_ANY,choices=['.DAT (LS)','.TXT (LS)','.DAT (SAS)'],name='.DAT (LS)')
+            self.Bind(wx.EVT_CHOICE,self.onDataType,self.inputDataType)
+
+            self.autoShiftBx = wx.CheckBox(self.topPanel,wx.ID_ANY, 'Auto Shift?')
+            self.autoShiftBx.SetValue(True)
+
+            #Row Two item(s)
+            #self.msgLabelOne = wx.StaticText(self.topPanel, wx.ID_ANY, '')
+
+            #Row 3 item(s)
+            self.TxtProfileName = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Profile Name: ')
+            self.TxtProfileRange = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Profile Length: ')
+            self.TxtDataPts = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Data Points: ')
+            self.TxtBlank = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+            self.TxtBlank2 = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+            self.TxtMinElectSpcng = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Min. Electrode Spacing: ')
+            self.TxtProjectName = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Project Name: ')
+            self.TxtArray = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Array: ')
+
+            self.msgProfileName = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+            self.msgProfileRange = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+            self.msgDataPts = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+
+            self.msgMinElectSpcng = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+            self.msgProjectName = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+            self.msgArray = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
+
+    # DataViz Area item(s)
+        def dataVizSetup(self):
+            self.editSlider = wx.Slider(self.chartPanel, pos=(200,0), id=wx.ID_ANY, style=wx.SL_TOP | wx.SL_AUTOTICKS | wx.SL_LABELS, name='Edit Data')
+            self.Bind(wx.EVT_SCROLL, self.onSliderEditEVENT, self.editSlider)
+
+            self.dataVizMsg1 = wx.StaticText(self.chartPanel, wx.ID_ANY, '')
+            self.dataVizMsg2 = wx.StaticText(self.chartPanel, wx.ID_ANY, '')
+            self.dataVizInput = wx.TextCtrl(self.chartPanel, wx.ID_ANY, '')
+
+            self.dataVizInputBtn = wx.Button(self.chartPanel, -1, "Use Value")
+            self.dataVizInputBtn.Bind(wx.EVT_BUTTON, self.ONdataVizInput)
+
+            self.saveEditsBtn = wx.Button(self.chartPanel, -1, "Save Edits")
+            self.saveEditsBtn.Bind(wx.EVT_BUTTON, self.ONSaveEdits)
+            self.saveEditsBtn.SetBackgroundColour((100,175,100))
+            self.currentChart = 'Graph'
+
+            self.electrodeToggleBtn = wx.ToggleButton(self.chartPanel,wx.ID_ANY,'On',size=(25,25))
+            self.electrodeToggleBtn.Bind(wx.EVT_TOGGLEBUTTON, self.ONtoggle)
+
+            self.GraphEditBtn = wx.Button(self.chartPanel, -1, "Graphic Editor", size=(100, 30))
+            self.GraphEditBtn.Bind(wx.EVT_BUTTON, self.graphChartEvent)
+
+            self.StatEditBtn = wx.Button(self.chartPanel, -1, "Statistical Editor", size=(100, 30))
+            self.Bind(wx.EVT_BUTTON, self.statChartEvent, self.StatEditBtn)
+
+            self.addGPSBtn = wx.Button(self.chartPanel, -1, "GPS Data", size=(100, 30))
+            self.addGPSBtn.Bind(wx.EVT_BUTTON, self.GPSChartEvent)
+
+            self.addTopoBtn = wx.Button(self.chartPanel, -1, "Topography Data", size=(100, 30))
+            self.addTopoBtn.Bind(wx.EVT_BUTTON, self.topoChartEvent)
+
+            self.reviewBtn = wx.Button(self.chartPanel, -1, "Review Edits", size=(100, 15))
+            self.reviewBtn.Bind(wx.EVT_BUTTON, self.reviewEvent)
+
+        def bottomAreaSetup(self):
+            # Row 4 items
+            self.labelGPSIN = wx.StaticText(self.bottomPanel, wx.ID_ANY, 'GPS Data')
+            self.inputTxtGPS = wx.TextCtrl(self.bottomPanel, wx.ID_ANY, 'Enter GPS Filepath Here')
+            self.inputGPSBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Browse')
+            self.Bind(wx.EVT_BUTTON, self.onGPSBrowse, self.inputGPSBtn)
+
+            self.dataEditMsg = wx.StaticText(self.bottomPanel, wx.ID_ANY, '')
+
+            self.labelTopoIN = wx.StaticText(self.bottomPanel, wx.ID_ANY, 'Topo Data')
+            self.inputTxtTopo = wx.TextCtrl(self.bottomPanel, wx.ID_ANY, 'Enter Topo Filepath Here')
+            self.inputTopoBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Browse')
+            self.includeTopoBx = wx.CheckBox(self.bottomPanel,wx.ID_ANY, 'Include Topography')
+            self.Bind(wx.EVT_BUTTON, self.onTopoBrowse, self.inputTopoBtn)
+
+            #Bottom Row items
+            self.saveBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Export and Save Data')
+            self.cancelBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Cancel')
+            self.Bind(wx.EVT_BUTTON, self.onExport, self.saveBtn)
+            self.Bind(wx.EVT_BUTTON, self.onCancel, self.cancelBtn)
+
+
+            self.labelExport = wx.StaticText(self.bottomPanel, wx.ID_ANY, 'Export Data')
+            self.exportTXT = wx.TextCtrl(self.bottomPanel, wx.ID_ANY, 'Enter Export Filepath Here')
+            self.exportDataBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Browse')
+            self.Bind(wx.EVT_BUTTON, self.onExportBrowse, self.exportDataBtn)
+
+    #Set up chart
+        def chartSetup(self):
+            self.chartSizer = wx.BoxSizer(wx.VERTICAL)
+
+            self.figure = matplotlib.figure.Figure()
+            self.canvas = wxagg.FigureCanvasWxAgg(self.chartPanel, -1, self.figure)
+
+            self.axes = self.figure.add_subplot(111)
+            self.axes.set_xlabel('X-Distance (m)')
+            self.axes.set_ylabel('Depth (m)')
+
+            self.toolbar = wxagg.NavigationToolbar2WxAgg(self.canvas)
+
+        def sizersSetup(self):
+            #Set up sizers
+            self.baseSizer       = wx.BoxSizer(wx.VERTICAL)
+
+            self.topSizer        = wx.BoxSizer(wx.VERTICAL)
+            self.titleSizer      = wx.BoxSizer(wx.HORIZONTAL)
+            self.inputSizer   = wx.BoxSizer(wx.HORIZONTAL)
+            #self.readMsgSizer   = wx.BoxSizer(wx.HORIZONTAL)
+            self.profileInfoSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.profileTxtSizer1 = wx.BoxSizer(wx.VERTICAL)
+            self.profileTxtSizer2 = wx.BoxSizer(wx.VERTICAL)
+            self.profileMsgSizer1 = wx.BoxSizer(wx.VERTICAL)
+            self.profileMsgSizer2 = wx.BoxSizer(wx.VERTICAL)
+            self.profileInfoSizer = wx.BoxSizer(wx.HORIZONTAL)
+
+            self.ctrlSizer = wx.BoxSizer(wx.VERTICAL)
+            self.chartSizer = wx.BoxSizer(wx.VERTICAL)
+            self.dataVizSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.vizInfoSizer = wx.BoxSizer(wx.HORIZONTAL)
+
+            self.bottomSizer = wx.BoxSizer(wx.VERTICAL)
+            self.GPSSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.TopoSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.botSizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        def addtoSizers(self):
+            #Add items to sizers
+            self.titleSizer.Add(self.title, 0, wx.ALIGN_CENTER)
+
+            self.inputSizer.Add(self.labelOne, 1,wx.ALIGN_CENTER,5)
+            self.inputSizer.Add(self.inputTxtOne, 8,wx.EXPAND,5)
+            self.inputSizer.Add(self.inputBrowseBtn,1,wx.ALIGN_CENTER,5)
+            self.inputSizer.Add(self.inputDataType,1,wx.ALIGN_CENTER,5)
+            self.inputSizer.Add(self.readInFileBtn,1,wx.ALIGN_CENTER,5)
+            self.inputSizer.Add(self.autoShiftBx, 1, wx.ALIGN_CENTER, 5)
+
+            #self.readMsgSizer.Add(self.msgLabelOne, 0, wx.ALL,5)
+
+            self.profileTxtSizer1.Add(self.TxtProfileName, 0, wx.ALIGN_LEFT,5)
+            self.profileTxtSizer1.Add(self.TxtProfileRange, 0, wx.ALIGN_LEFT,5)
+            self.profileTxtSizer1.Add(self.TxtDataPts, 0, wx.ALIGN_LEFT,5)
+            self.profileTxtSizer2.Add(self.TxtMinElectSpcng, 0, wx.ALIGN_LEFT,5)
+            self.profileTxtSizer2.Add(self.TxtArray, 0, wx.ALIGN_LEFT,5)
+            self.profileTxtSizer2.Add(self.TxtProjectName, 0, wx.ALIGN_LEFT,5)
+
+            self.profileMsgSizer1.Add(self.msgProfileName, 0, wx.ALIGN_LEFT,5)
+            self.profileMsgSizer1.Add(self.msgProfileRange, 0, wx.ALIGN_LEFT,5)
+            self.profileMsgSizer1.Add(self.msgDataPts, 0, wx.ALIGN_LEFT,5)
+            self.profileMsgSizer2.Add(self.msgMinElectSpcng, 0, wx.ALIGN_LEFT,5)
+            self.profileMsgSizer2.Add(self.msgArray, 0, wx.ALIGN_LEFT,5)
+            self.profileMsgSizer2.Add(self.msgProjectName, 0, wx.ALIGN_LEFT,5)
+
+            self.profileInfoSizer.Add(self.profileTxtSizer1, 1,wx.ALL,5)
+            self.profileInfoSizer.Add(self.profileMsgSizer1,3,wx.ALL,5)
+            self.profileInfoSizer.Add(self.profileTxtSizer2, 1, wx.ALL, 5)
+            self.profileInfoSizer.Add(self.profileMsgSizer2, 3, wx.ALL, 5)
+
+            self.topSizer.Add(self.titleSizer,1,wx.ALL,5)
+            self.topSizer.Add(self.inputSizer, 2, wx.ALL, 5)
+            #self.topSizer.Add(self.readMsgSizer, 1, wx.ALL, 5)
+
+            self.vizInfoSizer.Add(self.dataVizMsg1,16,wx.ALL,5)
+            self.vizInfoSizer.Add(self.dataVizMsg2, 24, wx.ALL, 5)
+            self.vizInfoSizer.Add(self.electrodeToggleBtn,1,wx.ALL,5)
+            self.vizInfoSizer.Add(self.dataVizInput, 1, wx.ALL, 5)
+            self.vizInfoSizer.Add(self.dataVizInputBtn,3,wx.ALL,5)
+            self.vizInfoSizer.Add(self.saveEditsBtn,3,wx.ALL,5)
+
+            self.ctrlSizer.Add(self.GraphEditBtn, 2, wx.ALL, 5)
+            self.ctrlSizer.Add(self.StatEditBtn, 2, wx.ALL, 5)
+            self.ctrlSizer.Add(self.addGPSBtn, 2, wx.ALL, 5)
+            self.ctrlSizer.Add(self.addTopoBtn, 2, wx.ALL, 5)
+            self.ctrlSizer.Add(self.reviewBtn,1,wx.ALL,5)
+
+            self.chartSizer.Add(self.vizInfoSizer, 1, wx.ALL, 5)
+            self.chartSizer.Add(self.editSlider,1, wx.LEFT | wx.RIGHT | wx.EXPAND,94)
+            self.chartSizer.Add(self.canvas, 12, wx.EXPAND)
+            self.chartSizer.Add(self.toolbar, 1, wx.EXPAND)
+
+            self.dataVizSizer.Add(self.ctrlSizer,1,wx.EXPAND)
+            self.dataVizSizer.Add(self.chartSizer,6,wx.EXPAND)
+
+            self.GPSSizer.Add(self.dataEditMsg, 2, wx.ALL, 5)
+            self.GPSSizer.Add(self.labelGPSIN, 1, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+            self.GPSSizer.Add(self.inputTxtGPS, 8, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+            self.GPSSizer.Add(self.inputGPSBtn, 1, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+
+            self.TopoSizer.Add(self.includeTopoBx, 2, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+            self.TopoSizer.Add(self.labelTopoIN, 1, wx.ALIGN_CENTER_VERTICAL| wx.ALL, 5)
+            self.TopoSizer.Add(self.inputTxtTopo, 8, wx.ALIGN_CENTER_VERTICAL| wx.ALL, 5)
+            self.TopoSizer.Add(self.inputTopoBtn, 1, wx.ALIGN_CENTER_VERTICAL| wx.ALL, 5)
+
+            self.botSizer.Add(self.labelExport, 1,  wx.ALL, 5)
+            self.botSizer.Add(self.exportTXT,6, wx.ALL, 5)
+            self.botSizer.Add(self.exportDataBtn,1, wx.ALL, 5)
+            self.botSizer.Add(self.cancelBtn, 1,  wx.ALL, 5)
+            self.botSizer.Add(self.saveBtn, 1,  wx.ALL, 5)
+            #btnSizer.Add(saveEditsBtn,0,wx.ALL,5)
+
+            self.bottomSizer.Add(self.GPSSizer,0, wx.ALIGN_RIGHT | wx.ALL, 5)
+            self.bottomSizer.Add(self.TopoSizer,0, wx.ALIGN_RIGHT | wx.ALL, 5)
+            self.bottomSizer.Add(self.botSizer,0, wx.ALIGN_RIGHT | wx.ALL, 5)
+
+        def addtoPanels(self):
+
+            self.topPanel.SetSizer(self.topSizer)
+            self.infoPanel.SetSizer(self.profileInfoSizer)
+            self.chartPanel.SetSizer(self.dataVizSizer)
+            self.bottomPanel.SetSizer(self.bottomSizer)
+
+            self.topPanel.Layout()
+
+            self.baseSizer.Add(self.topPanel,1, wx.EXPAND,1)
+            self.baseSizer.Add(self.infoPanel,1,wx.EXPAND,1)
+            self.baseSizer.Add(self.chartPanel, 10, wx.EXPAND | wx.ALL, 5)
+            self.baseSizer.Add(self.bottomPanel, 1, wx.EXPAND | wx.ALL, 1)
+
+            self.SetSizer(self.baseSizer)
+            self.SetSize(1100,950)
+
+        def variableInfo():
+            pass
+            #self.xDataIN:  list of all electrode xdistances
+            #self.xCols:    list with numbers of columns with x-values, from initial read-in table. varies with datatype
+            #self.xData:    list with all x-values of data points
+            #self.yData:    list with all y-values of data points (depth)
+            #self.values:   list with all resist. values of data points
+            #self.inputDataExt: extension of file read in, selected from initial drop-down (default = .dat (LS))
+            #self.xDF   :   dataframe with only x-dist of electrodes, and all of them
+            #self.dataframe: initial dataframe from data that is read in
+            #self.df:       dataframe formatted for editing, but remaining static as initial input data
+            #self.dataframeEDIT: dataframe that is manipulated during editing
+            #self.electrodes:sorted list of all electrode distances
+            #self.electState:list of booleans giving status of electrode (True = in use, False = edited out)
+            #self.electrodeElevs: surface elevation values at each electrode
+
+        setUpPanels(self)
+        titleSetup(self)
+        inputSetup(self)
+        dataVizSetup(self)
+        bottomAreaSetup(self)
+        chartSetup(self)
+        sizersSetup(self)
+        addtoSizers(self)
+        addtoPanels(self)
+
+        #wxli.InspectionTool().Show(self)
+
+#Initial Plot
+
+    def nullFunction(self,event):
+        pass
+
+    def onBrowse(self,event):
+        with wx.FileDialog(self,"Open Data File", style= wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return
+            self.dataPath = pathlib.Path(fileDialog.GetPath())
+            fName = str(self.dataPath.parent) + '\\' + self.dataPath.name
+            self.inputDataExt = self.dataPath.suffix
+
+            try:
+                with open(self.dataPath,'r') as datafile:
+                    self.inputTxtOne.SetValue(fName)
+            except  IOError:
+                wx.LogError("Cannot Open File")
+
+        if self.inputDataExt.lower() == '.txt':
+            self.inputDataExt = '.TXT (LS)'
+            n = 1
+        elif self.inputDataExt.lower() == '.dat':
+            if self.dataPath.stem.startswith('lr'):
+                self.inputDataExt = '.DAT (SAS)'
+                n = 2
+            else:
+                self.inputDataExt = '.DAT (LS)'
+                n = 0
+        else:
+            wx.LogError("Cannot Open File")
+
+        if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
+            outPath = self.dataPath.stem.split('-')[0]
+        else:
+            outPath = self.dataPath.stem.split('.')[0]
+            if outPath.startswith('lr'):
+                outPath = outPath[2:]
+        outPath = outPath +'_AdvEdit.dat'
+
+        if self.includeTopoBx.GetValue():
+            outPath = outPath[:-4]
+            outPath = outPath + "_topo.dat"
+
+        self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
+
+        self.inputDataType.SetSelection(n)
+
+        self.readInFileBtn.SetLabelText('Read Data')
+
+    def onGPSBrowse(self,event):
+        with wx.FileDialog(self,"Open GPS File", style= wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return
+            self.GPSpath = pathlib.Path(fileDialog.GetPath())
+            gpsFName = str(self.GPSpath.parent) + '\\' + self.GPSpath.name
+            self.inputTxtGPS.SetValue(gpsFName)
+        self.getGPSVals()
+
+    def getGPSVals(self):
+        with open(self.GPSpath) as GPSFile:
+            data = csv.reader(GPSFile)
+
+            self.gpsXData = []
+            self.gpsYData = []
+            self.gpsLabels = []
+            for row in enumerate(data):
+                if row[0] == 0:
+                    pass #headerline
+                else:
+                    r = re.split('\t+', str(row[1][0]))
+
+                    if row[0] == '':
+                        pass
+                    else:
+                        self.gpsLabels.append(r[2])
+                        self.gpsXData.append(float(r[3]))
+                        self.gpsYData.append(float(r[4]))
+
+    def onTopoBrowse(self,event):
+        with wx.FileDialog(self,"Open Topo File", style= wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return
+            self.topoPath = pathlib.Path(fileDialog.GetPath())
+            topoFName = str(self.topoPath.parent) + '\\' + self.topoPath.name
+            self.inputTxtTopo.SetValue(topoFName)
+        self.getTopoVals()
+        self.includeTopoBx.SetValue(True)
+
+        if len(self.inputTxtOne.GetValue())>0:
+            outPath = self.exportTXT.GetValue()[:-4]
+            outPath = outPath + "_topo.dat"
+            self.exportTXT.SetValue(outPath)
+
+    def getTopoVals(self):
+        with open(self.topoPath) as topoFile:
+            data = csv.reader(topoFile)
+
+            topoXData = []
+            topoYData = []
+            topoLabels = []
+            for row in enumerate(data):
+                if row[0] == 0:
+                    pass
+                else:
+                    r = re.split('\t+', str(row[1][0]))
+                    if r[0] == '':
+                        pass
+                    else:
+                        topoLabels.append(r[0])
+                        topoXData.append(float(r[1]))
+                        topoYData.append(float(r[2]))
+
+        self.topoDF = pd.DataFrame([topoXData, topoYData]).transpose()
+        self.topoDF.columns = ["xDist", "Elev"]
+
+    def onDataType(self,event):
+
+        self.inputDataExt = self.inputDataType.GetString(self.inputDataType.GetSelection())
+
+        if self.inputDataExt == '.DAT (LS)':
+            self.headerlines = 8
+        elif self.inputDataExt == '.DAT (SAS)':
+            self.headerlines = 5
+        elif self.inputDataExt =='':
+            self.headerlines = 8
+        else:
+            if len(self.inputTxtOne.GetValue()) > 0:
+                try:
+                    with open(self.dataPath, 'r') as datafile:
+                        filereader = csv.reader(datafile)
+                        start = 0
+
+                        for row in enumerate(filereader):
+                            if start == 0:
+                                if 'N\\tTime' in str(row[1]):
+                                    start = 1
+                                    self.headerlines = row[0]
+                                else:
+                                    continue
+                            else:
+                                continue
+                except:
+                    self.headerlines = -1
+                    wx.LogError('Data File not selected')
+            else:
+                self.headerlines = -1
+
+    def onReadIn(self, event):
+        self.onDataType(self) #initialize number of headerlines to use
+        self.dataHeader = []
+
+        filepath = pathlib.Path(self.inputTxtOne.GetValue())
+        self.ext = str(filepath.suffix)
+        filename = str(filepath.stem)
+
+        if self.ext.lower() == '.dat':
+            dataLst = []
+            self.dataLead = []
+            self.dataTail = []
+            with open(filepath) as dataFile:
+                data = csv.reader(dataFile)
+
+                if self.inputDataExt == '.DAT (SAS)':
+                    self.dataHeaders = ['x-Dist', 'A-space', 'N-factor', 'Value']
+
+                    i = 0
+                    dataList=[]
+                    for row in enumerate(data):
+                        if row[0]>self.headerlines:
+
+                            if row[0] > self.headerlines + datalength:
+                                self.dataTail.append(row[1])
+                            else:
+                                if len(row[1]) < 4:
+                                    dataList.append(re.split(' +', row[1][0]))
+                                else:
+                                    dataList.append(row[1])
+                                i+=1
+
+                        else:
+                            if row[0] == 3:
+                                datalength = float(row[1][0])
+                            self.dataLead.append(row[1])
+
+                    datalengthIN = i
+                    self.fileHeaderDict = {}
+                    self.dataListIN = dataList
+
+                    project = self.dataLead[0][0]
+
+                    array = self.dataLead[2][0]
+
+                    if float(array) == 3:
+                        array = "Dipole-Dipole"
+
+                    msrmtType = 'Apparent Resistivity'
+                    self.fileHeaderDict['Filename'] = filename
+                    self.fileHeaderDict['Project'] = project
+                    self.fileHeaderDict['minElectSpcng'] = round(float(self.dataLead[1][0]),2)
+                    self.fileHeaderDict['Array'] = array
+                    self.fileHeaderDict["Type of Measurement"] = msrmtType
+                    self.fileHeaderDict['DataPts'] = self.dataLead[3][0]
+
+                else:
+                    self.dataHeaders = ["NoElectrodes",'A_x', 'A_z', 'B_x', 'B_z', 'M_x', 'M_z', 'N_x', 'N_z', 'Value']
+                    datalength=12
+                    dataList = []
+                    for row in enumerate(data):
+
+                        if row[0]>int(self.headerlines) and row[0] <= float(self.headerlines + datalength):
+                            strrow = str(row[1])
+                            strrow = strrow[2:-2]
+
+                            splitrow = strrow.split('\\t')
+
+                            if len(splitrow) != 10:
+                                newrow = []
+                                for i in splitrow:
+                                    val = i.strip()
+                                    newrow.append(val)
+
+                                    if len(newrow) < 9:
+                                        newrow = re.split(' +',newrow[0])
+
+                                    row = [float(i) for i in newrow]
+                                dataList.append(row)
+                            else:
+                                dataList.append(splitrow)
+
+                        elif row[0] <= int(self.headerlines):
+                            if isinstance(row[1], list):
+                                val = str(row[1])[2:-2]
+                            else:
+                                val = row[1]
+                            self.dataLead.append(val)
+                            if row[0] == 6:
+                                datalength = float(row[1][0])
+                        else:
+                            self.dataTail.append(row[1])
+
+                    self.dataListIN = dataList
+                    self.fileHeaderDict = {}
+
+                    project = self.dataLead[0]
+                    dataFrmt = self.dataLead[2]
+                    array = int(self.dataLead[3])
+                    if array == 3:
+                        array = "Dipole-Dipole"
+
+                    msrmtType = str(self.dataLead[5])
+                    if msrmtType.strip() == '0':
+                        msrmtType = "Apparent Resistivity"
+                    else:
+                        msrmtType = 'Resistance'
+
+                    self.fileHeaderDict['Filename'] = filename
+                    self.fileHeaderDict['Project'] = project
+                    self.fileHeaderDict['minElectSpcng'] = str(round(float(self.dataLead[1]),2))
+                    self.fileHeaderDict['Array'] = array
+                    self.fileHeaderDict["Type of Measurement"] = msrmtType
+                    self.fileHeaderDict['DataPts'] = str(self.dataLead[6])
+                    self.fileHeaderDict['DistType'] = str(self.dataLead[7])
+
+            self.dataframe = pd.DataFrame(self.dataListIN)
+
+            if self.inputDataExt == '.DAT (SAS)':
+                if len(self.dataframe.columns) > 4:
+                    del self.dataframe[0]
+                    self.dataframe.reindex([0,1,2,3], axis='columns')
+                self.dataframe = self.dataframe.astype(float)
+
+            self.dataframe.columns = self.dataHeaders
+
+            self.readInFileBtn.SetLabelText("Reset Data")
+
+        elif self.ext.lower() == '.txt':
+            with open(filepath, 'r') as datafile:
+                filereader = csv.reader(datafile)
+                start = 0
+                end = 0
+                fileHeader = []
+                data = []
+                for row in enumerate(filereader):
+                    if start == 0:
+                        if row[0] <= 13:
+                            fileHeader.append(row[1])
+                            fileHeader[row[0]] = fileHeader[row[0]][:]
+
+                        if 'N\\tTime' in str(row[1]):
+                            start = 1
+                            self.headerlines = row[0]
+                            dataHdrTemp = str(row[1])
+                            self.dataHeaders = dataHdrTemp[2:-2].split('\\t')
+                            self.dataHeaders[1] = dataHdrTemp[1].strip()
+
+                            self.fileHeaderDict = {}
+                            for item in fileHeader:
+                                if len(item) > 0:
+                                    self.fileHeaderDict[str(item[0]).split(":", 1)[0]] = str(item[0]).split(":", 1)[
+                                        1].strip()
+
+                    elif start == 1 and end == 0:
+                        if len(row[1]) > 0:
+                            data.append(str(row[1])[2:-1].split('\\t'))
+                        else:
+                            end = 1
+                    else:
+                        continue
+
+            self.dataListIN = data
+            self.dataframe = pd.DataFrame(self.dataListIN)
+
+            self.dataHeaders[1] = 'MeasTime'
+            if len(self.dataHeaders) > 37:
+                self.dataHeaders[37] = 'Extra'
+
+            self.dataTail = [0,0,0,0,0,0,0]
+
+            self.dataframe.columns = self.dataHeaders
+
+            self.readInFileBtn.SetLabelText("Reset Data")
+
+            self.fileHeaderDict['Filename'] = filename
+            self.fileHeaderDict['Project'] = self.fileHeaderDict['Project name']
+            self.fileHeaderDict['Array'] = self.fileHeaderDict['Protocol file'][21:-4]
+            self.fileHeaderDict['minElectSpcng'] = self.fileHeaderDict['Smallest electrode spacing']
+            self.fileHeaderDict['DataPts'] = len(self.dataframe)
+
+            self.dataLead = []
+            self.dataLead.append(self.fileHeaderDict['Project name'] + "  " + self.fileHeaderDict['Filename'])
+            self.dataLead.append(self.fileHeaderDict['minElectSpcng'])
+            self.dataLead.append('11') #General Array format
+            self.dataLead.append(self.fileHeaderDict['Sub array code']) #tells what kind of array is used
+            self.dataLead.append('Type of measurement (0=app.resistivity,1=resistance)')
+            self.dataLead.append('0') #Col 26 in .txt (col 28 is app. resistivity)
+            self.dataLead.append(self.fileHeaderDict['DataPts'])
+            self.dataLead.append('2')
+            self.dataLead.append('0')
+
+        else:
+            self.datVizMsg2.SetLabelText("Filepath Error. Must be .DAT or .TXT file")
+
+        self.dataLengthIN = len(self.dataframe.iloc[:,0])
+
+        self.read = 0
+        self.generateXY()
+        self.generateProfileInfo()
+        self.graphChart()
+        self.read = 1
+
+    def generateXY(self):
+        self.xCols = []
+        aVals = []
+        nFacs = []
+        yCols = []
+        valCols = []
+
+        self.xData = []
+        self.yData = []
+        self.values = []
+
+        if self.inputDataExt == '.DAT (SAS)':
+            self.xCols = [0]
+            self.electrodeCols = []
+            aVals = 1
+            nFacs = 2
+            yCols = -1
+            valCols = 3
+
+            if self.autoShiftBx.GetValue():
+                startPt = float(self.dataframe.iloc[:,self.xCols[0]].min())
+                if startPt != 0:
+                    for i in enumerate(self.dataframe.iloc[:,self.xCols[0]]):
+                        self.dataframe.iloc[i[0],self.xCols[0]] = float(i[1]) - float(startPt)
+
+                    if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
+                        outPath = self.dataPath.stem.split('-')[0]
+                    else:
+                        outPath = self.dataPath.stem.split('.')[0]
+                        if outPath.startswith('lr'):
+                            outPath = outPath[2:]
+                    outPath = outPath + '_shift_AdvEdit.dat'
+                    self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
+
+            if self.includeTopoBx.GetValue():
+                outPath = self.exportTXT.GetValue()[:-4]
+                outPath = outPath + "_topo.dat"
+                self.exportTXT.SetValue(outPath)
+
+            self.xDataIN = self.dataframe.iloc[:,self.xCols[0]]
+            self.xDataIN = self.xDataIN.to_list()
+            for x in enumerate(self.xDataIN):
+                self.xDataIN[x[0]] = round(float(x[1]),0)
+            #print("XDATA IN:")
+            #print(self.xDataIN)
+
+            a = []
+            aValList = self.dataframe.iloc[:,aVals].to_list()
+            for item in aValList:
+                a.append(float(item))
+            #print('a')
+            #print(len(a))
+            #print(a)
+
+            n = []
+            nFac = self.dataframe.iloc[:,nFacs]
+            nFacList = nFac.to_list()
+            for item in nFacList:
+                n.append(float(item))
+
+            i = 0
+            for item in self.xDataIN:
+                self.xData.append(float(item)+a[i]+(a[i]*n[i])/2)
+                i += 1
+
+            valList = self.dataframe.iloc[:, valCols]
+            valList = valList.to_list()
+            for item in valList:
+                self.values.append(float(item))
+
+            i = 0
+            for item in n:
+                self.yData.append(round((((item**2)*-0.0018)+0.2752*item+0.1483)*a[i],1))
+                i+=1
+
+            cols = ['N', 'M', 'B', 'A']
+
+            listlist = []
+            for i in range(0,len(self.xDataIN)):
+                a1 = self.xDataIN[i]
+                b1 =self.xDataIN[i]+a[i]
+                m1 = self.xDataIN[i]+a[i]+(a[i]*n[i])
+                n1 = self.xDataIN[i]+a[i]+(a[i]*n[i])+a[i]
+                self.xDataIN.append(b1)
+                self.xDataIN.append(m1)
+                self.xDataIN.append(n1)
+                newrow = [round(a1,0), round(b1,0),round(m1,0),round(n1,0)]
+                listlist.append(newrow)
+            self.xDF = pd.DataFrame(listlist)
+            self.xDF.columns = cols
+            #print(self.xDF)
+
+            minvals = self.xDF.min()
+            #print(minvals)
+            self.minXDist = minvals.min()
+            maxvals = self.xDF.max()
+            self.maxXDist = maxvals.max()
+
+        elif self.inputDataExt =='.TXT (LS)':
+            self.xCols = [18]
+            self.electrodeCols = [6,9,12,15]
+            aVals = -1
+            nFacs = -1
+            yCols = 20
+            valCols = 28 #resistance; 28 is app. resistivity
+
+            if self.autoShiftBx.GetValue():
+                startPt = []
+                for c in self.electrodeCols:
+                    startPt.append(float(self.dataframe.iloc[:,c].min()))
+                startPt = min(startPt)
+
+                if startPt != 0:
+                    for c in self.electrodeCols:
+                        for i in enumerate(self.dataframe.iloc[:,c]):
+                            self.dataframe.iloc[i[0],c] = float(i[1]) - float(startPt)
+
+                    if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
+                        outPath = self.dataPath.stem.split('-')[0]
+                    else:
+                        outPath = self.dataPath.stem.split('.')[0]
+                        if outPath.startswith('lr'):
+                            outPath = outPath[2:]
+                    outPath = outPath + '_shift_AdvEdit.dat'
+                    self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
+
+            if self.includeTopoBx.GetValue():
+                outPath = self.exportTXT.GetValue()[:-4]
+                print(outPath)
+                outPath = outPath + "_topo.dat"
+                self.exportTXT.SetValue(outPath)
+
+            self.xDataIN = []
+            for c in self.electrodeCols:
+                for row in self.dataframe.iloc[:,c]:
+                    self.xDataIN.append(round(float(row),0))
+
+            xDataIN = self.dataframe.iloc[:,self.xCols[0]].to_list()
+            for item in xDataIN:
+                self.xData.append(float(item))
+
+            yDataIN = self.dataframe.iloc[:,yCols].to_list()
+            for item in yDataIN:
+                self.yData.append(float(item))
+
+            valIN = self.dataframe.iloc[:,valCols].to_list()
+            for item in valIN:
+                self.values.append(float(item))
+
+            #for item in self.dataframe:
+            #    print(item)
+
+            xDistCols = ['B(x)', 'A(x)', 'N(x)', 'M(x)']
+
+            xDF = pd.DataFrame(self.dataframe.loc[:,xDistCols[:]])
+            xDF.columns = xDistCols
+            xDF = xDF.astype(float)
+            self.xDF = pd.DataFrame()
+
+            self.xDF['A(x)'] = xDF['A(x)']
+            self.xDF['B(x)'] = xDF['B(x)']
+            self.xDF['M(x)'] = xDF['M(x)']
+            self.xDF['N(x)'] = xDF['N(x)']
+
+            #print(self.xDF)
+
+            xList = []
+            for item in xDistCols:
+                xDistList = self.dataframe.loc[:,item].to_list()
+
+                for item in xDistList:
+                    xList.append(float(item))
+
+            #print(self.dataframe)
+
+            minvals = self.xDF.min()
+            self.minXDist = minvals.min()
+            maxvals = self.xDF.max()
+            #print(maxvals)
+            self.maxXDist = maxvals.max()
+
+        else:
+            self.xCols = [1,3,5,7]
+            aVals = []
+            nFacs = []
+            yCols = [2,4,6,8]
+            valCols = 9
+
+            if self.autoShiftBx.GetValue():
+                startPt = []
+                for c in self.xCols:
+                    startPt.append(float(self.dataframe.iloc[:,c].min()))
+                startPt = min(startPt)
+
+                if startPt != 0:
+                    for c in self.xCols:
+                        for i in enumerate(self.dataframe.iloc[:,c]):
+                            self.dataframe.iloc[i[0],c] = i[1] - startPt
+
+                    if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
+                        outPath = self.dataPath.stem.split('-')[0]
+                    else:
+                        outPath = self.dataPath.stem.split('.')[0]
+                        if outPath.startswith('lr'):
+                            outPath = outPath[2:]
+                    outPath = outPath + '_shift_AdvEdit.dat'
+                    self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
+
+            if self.includeTopoBx.GetValue():
+                outPath = self.exportTXT.GetValue()[:-4]
+                outPath = outPath + "_topo.dat"
+                self.exportTXT.SetValue(outPath)
+
+            self.xDataIN = []
+
+            xList = []
+            for row in range(0,len(self.dataframe)):
+                i = 0
+                for col in self.xCols:
+                    item = self.dataframe.iloc[row,col]
+
+                    if i < 1:
+                        x1 = item
+                        self.xDataIN.append(round(float(item),0))
+                    elif i < 2:
+                        x2 = item
+                        self.xDataIN.append(round(float(item),0))
+                    elif i < 3:
+                        x3 = item
+                        self.xDataIN.append(round(float(item),0))
+                    else:
+                        x4 = item
+                        self.xDataIN.append(round(float(item),0))
+                        x = (float(x4) + float(x1)) / 2
+                        a = float(x2) - float(x1)
+                        n = (float(x3) - float(x2)) / a
+
+                        self.xData.append(float(x))
+                        self.yData.append(float(round((((n ** 2) * -0.0018) + 0.2752 * n + 0.1483) * a, 1)))
+                        self.values.append(float(self.dataframe.iloc[row, valCols]))
+
+                    xList.append(float(item))
+                    i += 1
+
+
+            self.xDF = pd.DataFrame(self.dataframe.iloc[:,self.xCols[:]])
+            self.xDF = self.xDF.astype(float)
+
+            self.maxXDist = max(xList)
+            self.minXDist = min(xList)
+
+        if self.yData[0] < 0:
+            for i in enumerate(self.yData):
+                self.yData[i[0]] = self.yData[i[0]]*-1
+
+        self.maxDepth = max(self.yData)
+        self.maxResist = max(self.values)
+        self.fileHeaderDict['DataPts'] = len(self.dataframe)
+
+        dt = []
+        dt.append(self.xData)
+        dt.append(self.yData)
+        dt.append(self.values)
+        cols = ['xDist', 'Depth', 'Value']
+
+        df = pd.DataFrame(dt)
+        df = df.transpose()
+        df.columns = cols
+
+        uniqueDepths = df.groupby(['Depth']).mean()
+        uniqueDepths = uniqueDepths.drop(['xDist'], axis=1)
+
+        self.df = df.merge(uniqueDepths, on=('Depth'), suffixes=('', '_DtLvlMean'))
+        self.df.rename(columns={'Value_DtLvlMean': 'DtLvlMean'}, inplace=True)
+
+        self.df['PctErr'] = abs((self.df['DtLvlMean'] - self.df['Value'])) / self.df['DtLvlMean']
+        self.df['MeasID'] = self.df.index.copy()
+
+        self.xDataIN = [float(i) for i in self.xDataIN]
+        self.xDataIN = sorted(set(self.xDataIN))
+        self.dataframeEDIT = self.dataframe.copy()
+
+        self.dataframeEDIT= pd.concat([self.dataframeEDIT,self.df],axis=1)
+        self.dataframeEDIT["Keep"] = self.dataframeEDIT['PctErr']*0+1
+        self.dataframeEDIT['Keep'] = self.dataframeEDIT['Keep'].astype(bool)
+
+        #print(self.dataframeEDIT)
+        xDataINList = []
+        for i in self.xDataIN:
+            xDataINList.append(round(i,0))
+        self.electrodes = sorted(xDataINList)
+        self.electState = []
+        for i in self.electrodes:
+            self.electState.append(bool(i*0+1))
+
+        self.dataEditMsg.SetLabelText(str(len(self.dataframeEDIT)) + ' data pts')
+
+    def generateProfileInfo(self):
+
+        print("FileHeaderDict")
+        print(self.fileHeaderDict)
+
+        self.msgProfileName.SetLabelText(str(self.fileHeaderDict['Filename']))
+        self.msgProfileRange.SetLabelText(str(round(self.minXDist,0)) + " - " + str(round(self.maxXDist,0)))
+        self.msgDataPts.SetLabelText(str(self.fileHeaderDict['DataPts']))
+        self.msgArray.SetLabelText(str(self.fileHeaderDict['Array']))
+
+        self.msgProjectName.SetLabelText(str(self.fileHeaderDict['Project']))
+        self.msgMinElectSpcng.SetLabelText(str(self.fileHeaderDict['minElectSpcng']))
+
+        self.electrodeToggleBtn.SetValue(True)
+        self.electrodeToggleBtn.SetBackgroundColour((0, 255, 0))
+        self.sliderVal = self.editSlider.GetValue()
+        self.dataVizMsg2.SetLabelText('Electrode at ' + str(self.sliderVal) + ' m')
+
+    def graphChartEvent(self, event):
+        self.graphChart()
+
+    def graphChart(self):
+        self.editSlider.Show()
+
+        if self.currentChart != 'Graph':
+            self.editSlider.SetValue(0)
+        self.currentChart = 'Graph'
+
+        self.dataVizMsg1.SetLabelText('Graphical Editing Interface')
+        self.saveEditsBtn.Hide()
+        self.dataVizInput.Show()
+        self.dataVizInputBtn.Show()
+        self.electrodeToggleBtn.Show()
+
+        x = []
+        z = []
+        v = []
+        pe = []
+
+        KeepList = self.dataframeEDIT['Keep'].to_list()
+        peList = self.dataframeEDIT['PctErr'].to_list()
+
+        for i in enumerate(KeepList):
+            if i[1]:
+                x.append(self.xData[i[0]])
+                z.append(self.yData[i[0]])
+                v.append(self.values[i[0]])
+                pe.append(peList[i[0]])
+
+        self.axes.clear()
+
+        if 'scipy.interpolate' in sys.modules:
+            self.makeColormesh(x,z,v, pe)
+        else:
+            ptSize = round(100/self.maxXDist*125,1)
+            self.axes.scatter(x,z, c=v,edgecolors='black',s=ptSize, marker='h')
+
+        self.axes.set_ylim(self.maxDepth*1.15,0)
+        self.axes.set_xlabel('X-Distance (m)')
+        self.axes.set_ylabel('Depth (m)')
+        self.axes.xaxis.tick_top()
+
+        self.editSlider.SetMax(int(self.maxXDist))
+        self.editSlider.SetMin(int(self.minXDist))
+
+        self.editSlider.SetTickFreq(5)
+
+        self.canvas.draw()
+
+    def makeColormesh(self,x,z,v, pe):
+        for i in enumerate(v):
+            v[i[0]] = abs(i[1])
+
+        xi, zi = np.linspace(min(x), max(x), 300), np.linspace(min(z), max(z), 300)
+        xi, zi = np.meshgrid(xi, zi)
+
+        vi = scipy.interpolate.griddata((x, z), v, (xi, zi), method='linear')
+
+        ptSize = round(100 / self.maxXDist * 30*2, 1)
+
+        vmax = np.percentile(v,98)
+        vmin = np.percentile(v,2)
+
+        self.figure.clear()
+        self.axes = self.figure.add_subplot(111)
+
+        im = self.axes.imshow(vi, vmin=vmin, vmax=vmax, origin='lower',
+                    extent=[min(x), max(x), min(z), max(z) * 1.1],
+                    aspect='auto',
+                    cmap='nipy_spectral',
+                    norm = matplotlib.colors.LogNorm(vmin = vmin, vmax = vmax),
+                    interpolation='bilinear')
+
+        print('Vmin: '+ str(vmin))
+
+        print('Vmax: ' + str(vmax))
+        print('Actual Max: ' + str(max(v)))
+        self.figure.colorbar(im, orientation='horizontal')
+        self.axes.scatter(x, z, c=pe, edgecolors='black', s=ptSize, marker='h', alpha=0.5, cmap='binary')
+
+    def statChartEvent(self,event):
+        self.statChart()
+
+    def statChart(self):
+
+        self.dataVizMsg1.SetLabelText('Statistical Editing Interface')
+        self.dataVizMsg2.SetLabelText('Move slider to % err upper limit')
+
+        self.currentChart = 'Stat'
+        self.saveEditsBtn.Show()
+        self.dataVizInput.Show()
+        self.editSlider.Show()
+        self.dataVizInputBtn.Show()
+        self.electrodeToggleBtn.Hide()
+
+        peIndex =  int(self.dataframeEDIT.columns.get_loc('PctErr'))
+
+        KeepList = self.dataframeEDIT.loc[:,'Keep'].to_list()
+        peList = self.dataframeEDIT.iloc[:,peIndex].to_list()
+
+        pctErr = []
+        for i in enumerate(KeepList):
+            if i[1]:
+                pctErr.append(float(peList[i[0]]) * 100)
+
+        self.editSlider.SetMin(0)
+        self.editSlider.SetMax(int(max(pctErr)))
+        self.editSlider.SetValue(int(max(pctErr)))
+        self.editSlider.SetTickFreq(1)
+
+        self.figure.clear()
+        self.axes = self.figure.add_subplot(111)
+        self.axes.hist(pctErr, bins=30)
+        self.axes.set_xlim(0, max(pctErr)*1.1)
+        self.axes.xaxis.tick_bottom()
+
+        self.canvas.draw()
+
+    def GPSChartEvent(self,event):
+        self.GPSChart()
+
+    def GPSChart(self):
+        self.editSlider.Hide()
+        self.electrodeToggleBtn.Hide()
+        self.dataVizInput.Hide()
+        self.dataVizInputBtn.Hide()
+        self.saveEditsBtn.Hide()
+
+        self.currentChart = 'GPS'
+        self.dataVizMsg1.SetLabelText('GPS Data Viewer')
+        self.dataVizMsg2.SetLabelText(str(self.GPSpath.stem))
+
+        self.getGPSVals()
+
+        self.figure.clear()
+        self.axes = self.figure.add_subplot(111)
+
+        xRange = max(self.gpsXData) - min(self.gpsXData)
+        yRange = max(self.gpsYData) - min(self.gpsYData)
+
+        if xRange!=0:
+            slope = abs(yRange/xRange)
+        else:
+            slope = 1000
+
+        if slope < 1:
+            if slope < 0.2:
+                xFact = 0.2
+                yFact = 5
+            elif slope < 0.6:
+                xFact = 0.2
+                yFact = 3
+            else:
+                xFact = 0.2
+                yFact = 1
+        else:
+            if slope > 4:
+                xFact = 5
+                yFact = 0.2
+            elif slope > 2:
+                xFact = 3
+                yFact = 0.2
+            else:
+                xFact = 1
+                yFact = 0.2
+
+        lowXlim = min(self.gpsXData) - xFact*xRange
+        upXlim = max(self.gpsXData) + xFact*xRange
+        lowYlim = min(self.gpsYData) - yFact*yRange
+        upYlim = max(self.gpsYData) + yFact*yRange
+
+
+        tick_spacing = 100
+        self.axes.scatter(self.gpsXData,self.gpsYData, s=20, marker='h')
+        self.axes.plot(self.gpsXData, self.gpsYData)
+        self.axes.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(tick_spacing))
+        self.axes.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(tick_spacing))
+        self.axes.ticklabel_format(axis='both',style='plain')
+        self.axes.grid(which='major', axis='both',color=(0.8,0.8,0.8))
+        self.axes.set_xlim(lowXlim,upXlim)
+        self.axes.set_ylim(lowYlim,upYlim)
+        self.axes.set_xlabel('UTM Easting')
+        self.axes.set_ylabel('UTM Northing')
+        self.axes.xaxis.tick_bottom()
+
+        self.canvas.draw()
+
+    def topoChartEvent(self,event):
+        self.topoChart()
+
+    def topoChart(self):
+        self.editSlider.Hide()
+        self.electrodeToggleBtn.Hide()
+        self.dataVizInput.Hide()
+        self.dataVizInputBtn.Hide()
+        self.saveEditsBtn.Hide()
+
+        self.currentChart = 'Topo'
+        self.dataVizMsg1.SetLabelText('Topo Data Viewer')
+        self.dataVizMsg2.SetLabelText(str(self.topoPath.stem))
+
+        self.getTopoVals()
+
+        self.figure.clear()
+        self.axes = self.figure.add_subplot(111)
+
+        #tick_spacing = 100
+        self.axes.scatter(self.topoDF['xDist'],self.topoDF['Elev'], s=5, marker='h')
+        self.axes.plot(self.topoDF['xDist'],self.topoDF['Elev'])
+        self.axes.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(100))
+        #self.axes.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(tick_spacing))
+        self.axes.ticklabel_format(axis='both',style='plain')
+        self.axes.grid(which='major', axis='both',color=(0.8,0.8,0.8))
+        self.axes.set_xlim(0-max(self.topoDF['xDist'])*.2,max(self.topoDF['xDist'])*1.2)
+        self.axes.set_ylim(min(self.topoDF['Elev'])*0.8,max(self.topoDF['Elev'])*1.2)
+        self.axes.set_xlabel('X-Distance Along Profile (m)')
+        self.axes.set_ylabel('Elevation Above MSL (m)')
+        self.axes.xaxis.tick_bottom()
+
+        self.canvas.draw()
+
+    def onSliderEditEVENT(self,event):
+        self.onSliderEdit()
+
+    def onSliderEdit(self):
+        self.sliderVal = float(self.editSlider.GetValue())
+        if self.currentChart == 'Graph':
+
+            if self.sliderVal in self.electrodes:
+
+                self.electrodeToggleBtn.Show()
+
+                toggleState = self.electState[int(self.electrodes.index(self.sliderVal))]
+                self.electrodeToggleBtn.SetValue(toggleState)
+
+                if toggleState == True:
+                    self.dataVizMsg2.SetLabelText("Electrode at " + str(self.sliderVal) + " m is in use")
+                    self.electrodeToggleBtn.SetLabelText('On')
+                    self.electrodeToggleBtn.SetBackgroundColour((100, 255, 100))
+                else:
+                    self.electrodeToggleBtn.SetLabelText('Off')
+                    self.electrodeToggleBtn.SetBackgroundColour((255, 100, 100))
+                    self.dataVizMsg2.SetLabelText("Electrode at " + str(self.sliderVal) + " m is not in use")
+
+            else:
+                self.dataVizMsg2.SetLabelText('No Electrode at this x-location')
+                self.electrodeToggleBtn.Hide()
+        elif self.currentChart == 'Stat':
+
+            currData = 0
+            for i in self.dataframeEDIT["Keep"]:
+                if i:
+                    currData = currData + 1
+
+            peIndex = self.dataframeEDIT.columns.get_loc('PctErr')
+            dataCut = 0
+            for r in enumerate(self.dataframeEDIT.iloc[:, peIndex]):
+                if float(r[1]) >= float(self.sliderVal) / 100.0:
+                    dataCut += 1
+
+            self.dataVizMsg2.SetLabelText(str(self.sliderVal)+'% Err: '+str(dataCut) + ' points will be deleted ('+
+                                          str(round(dataCut/currData*100,1))+'% of the current data).')
+        else:
+            self.dataVizMsg2.SetLabelText('Value: ' + str(self.sliderVal))
+
+    def ONtoggle(self,event):
+        self.ToggleState = self.electrodeToggleBtn.GetValue()
+        self.sliderVal = self.editSlider.GetValue()
+
+
+        if self.ToggleState == True:
+            self.dataVizMsg2.SetLabelText("Electrode at "+ str(self.sliderVal) +" m is in use")
+            self.electrodeToggleBtn.SetLabelText('On')
+            self.electrodeToggleBtn.SetBackgroundColour((100,255,100))
+
+            xCols = [0,1,2,3]
+            keep=[]
+            for c in xCols:
+                for r in enumerate(self.xDF.iloc[:,c]):
+                    if float(r[1]) == float(self.sliderVal):
+                        keep.append(r[0])
+
+            for i in self.dataframeEDIT.index:
+                if i in keep:
+                    self.dataframeEDIT.loc[[i],['Keep']] = True
+
+            eIndex = int(self.electrodes.index(self.sliderVal))
+            self.electState[eIndex] = True
+
+        elif self.ToggleState == False:
+            self.electrodeToggleBtn.SetLabelText('Off')
+            self.electrodeToggleBtn.SetBackgroundColour((255,100,100))
+            self.dataVizMsg2.SetLabelText("Electrode at " + str(self.sliderVal) + " m is not in use")
+
+            xCols = [0,1,2,3]
+            lose=[]
+            for c in xCols:
+                for r in enumerate(self.xDF.iloc[:,c]):
+                    if float(r[1]) == float(self.sliderVal):
+                        lose.append(r[0])
+
+            for i in self.dataframeEDIT.index:
+                if i in lose:
+                    self.dataframeEDIT.loc[[i],['Keep']] = False
+
+            #change self.electState to True
+            eIndex = int(self.electrodes.index(self.sliderVal))
+            self.electState[eIndex] = False
+
+        else:
+            self.dataVizMsg2.SetLabelText("uhh, this is wierd")
+
+        dataRetained = 0
+        for i in self.dataframeEDIT["Keep"]:
+            if i:
+                dataRetained = dataRetained + 1
+                #print(dataRetained)
+
+        self.dataEditMsg.SetLabelText(str(dataRetained) + '/' + str(len(self.dataframeEDIT)) + 'pts (' + str(round(dataRetained/len(self.dataframeEDIT)*100,1)) + '%)')
+
+        self.graphChart()
+
+    def ONSaveEdits(self,event):
+
+        if self.currentChart == 'Graph':
+            #do nothing
+            pass
+        elif self.currentChart == 'Stat':
+            #self.sliderVal = float(self.editSlider.GetValue())
+            peIndex = self.dataframeEDIT.columns.get_loc('PctErr')
+            lose = []
+
+            for r in enumerate(self.dataframeEDIT.iloc[:, peIndex]):
+                if float(r[1]) >= float(self.sliderVal)/100.0:
+                    lose.append(r[0])
+
+            kIndex = int(self.dataframeEDIT.columns.get_loc('Keep'))
+
+            for i in self.dataframeEDIT.index:
+                if i in lose:
+                    self.dataframeEDIT.iloc[i, kIndex] = False
+
+            dataRetained = 0
+            for i in self.dataframeEDIT["Keep"]:
+                if i:
+                    dataRetained = dataRetained + 1
+
+            self.dataEditMsg.SetLabelText(str(dataRetained) + '/' + str(len(self.dataframeEDIT)) + 'pts (' + str(
+                round(dataRetained / len(self.dataframeEDIT) * 100, 1)) + '%)')
+
+            self.statChart()
+        else:
+            pass
+
+    def ONdataVizInput(self,event):
+        if self.dataVizInput.GetValue().isnumeric():
+            if float(self.dataVizInput.GetValue()) < float(self.editSlider.GetMin()) or float(self.dataVizInput.GetValue()) > float(self.editSlider.GetMax()):
+                self.dataVizMsg2.SetValue('Error: Value must integer be between '+ str(self.editSlider.GetMin())+ ' and '+str(self.editSlider.GetMax()))
+            else:
+                self.editSlider.SetValue(int(self.dataVizInput.GetValue()))
+                self.dataVizInput.SetValue('')
+        else:
+            self.dataVizInput.SetValue('Error: Value must be numeric')
+        self.onSliderEdit()
+
+    def reviewEvent(self,event):
+        self.reviewChart()
+
+    def reviewChart(self):
+        self.editSlider.Hide()
+        self.currentChart = 'Review'
+        self.dataVizMsg1.SetLabelText('Review Edits')
+        self.saveEditsBtn.Hide()
+        self.electrodeToggleBtn.Hide()
+        self.dataVizInput.Hide()
+        self.dataVizInputBtn.Hide()
+
+        x = []
+        y = []
+        v = []
+        xOmit = []
+        yOmit = []
+
+        for i in enumerate(self.dataframeEDIT['Keep']):
+            if i[1]:
+                x.append(self.xData[i[0]])
+                y.append(self.yData[i[0]])
+                v.append(self.values[i[0]])
+            else:
+                xOmit.append(self.xData[i[0]])
+                yOmit.append(self.yData[i[0]])
+
+        self.axes.clear()
+        ptSize = round(100/self.maxXDist*125,1)
+        self.axes.scatter(x,y, c=v,s=ptSize, marker='h')
+        self.axes.scatter(xOmit,yOmit,c='black',s=ptSize-ptSize*0.333,marker = 'x')
+        self.axes.set_ylim(self.maxDepth*1.1,0)
+        self.axes.set_xlabel('X-Distance (m)')
+        self.axes.set_ylabel('Depth (m)')
+        self.axes.xaxis.tick_top()
+
+        self.editSlider.SetMax(self.maxXDist)
+        self.editSlider.SetMin(self.minXDist)
+
+        self.editSlider.SetTickFreq(5)
+
+        self.canvas.draw()
+        pass
+
+    def getClosestElev(self):
+        if len(self.inputTxtTopo.GetValue())>0 and 'Enter Topo Filepath Here' not in self.inputTxtTopo.GetValue():
+            if self.topoDF['xDist'].max() > max(self.electrodes) or self.topoDF['xDist'].min() > min(self.electrodes):
+                if self.topoDF['xDist'].max() > max(self.electrodes):
+                    wx.LogError("File format error. Maximum topo X-Distance is greater than maximum electrode X-Distance.")
+                else:
+                    wx.LogError("File format error. Minimum topo X-Distance is less than minimum electrode X-Distance.")
+            else:
+
+                self.electrodeElevs = [[] for k in range(len(self.electrodes))]
+
+                for x in enumerate(self.electrodes):
+
+
+                    elecxDist = x[1]
+                    elecIndex = x[0]
+                    index = np.argmin(np.abs(np.array(self.topoDF['xDist']) - elecxDist))
+                    nearestTopoxDist = self.topoDF.loc[index,'xDist']
+                    nearestTopoElev = self.topoDF.loc[index,'Elev']
+
+                    #print('Electrode X Dist: ' + str(x[1]))
+                    #print("Nearest Topo X Dist: " +str(nearestTopoxDist))
+                    #print("Nearest Topo Elev: " + str(nearestTopoElev))
+
+                    if nearestTopoxDist == x[1]:
+                        self.electrodeElevs[elecIndex] = nearestTopoElev
+                    elif nearestTopoxDist >= x[1]:
+                        mapNum = nearestTopoxDist - self.electrodes[elecIndex]
+                        mapDenom = nearestTopoxDist - self.topoDF.loc[index-1,'xDist']
+                        mVal = float(mapNum/mapDenom)
+                        self.electrodeElevs[elecIndex] = nearestTopoElev - (nearestTopoElev-self.topoDF.loc[index-1,'Elev'])*mVal
+                    else:
+
+                        mapNum = self.electrodes[elecIndex] - nearestTopoxDist
+
+                        mapDenom = self.topoDF.loc[index+1,'xDist']-nearestTopoxDist
+
+                        mVal = float(mapNum/mapDenom)
+
+                        self.electrodeElevs[elecIndex] = nearestTopoElev + (nearestTopoElev-self.topoDF.loc[index-1,'Elev'])*mVal
+
+        elif self.inputDataExt == '.DAT (LS)':
+            self.electrodeElevs = []
+
+            for x in enumerate(self.electrodes):
+                found = 0
+                for xc in self.xCols:
+                    if found == 0:
+                        for i in enumerate(self.dataframeEDIT.iloc[:,xc]):
+                            if round(float(x[1]),2) == round(float(i[1]),2):
+                                zc = xc + 1
+                                found = 1
+                                elev = self.dataframeEDIT.iloc[i[0],zc]
+                self.electrodeElevs.append(float(elev))
+
+        else:
+            wx.LogError("No Topography Data Found")
+
+    def onExportBrowse(self, event):
+        with wx.FileDialog(self, "Select Export Filepath", style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+            if fileDialog.ShowModal() == wx.ID_CANCEL:
+                return
+            self.exportPathname = pathlib.Path(fileDialog.GetPath())
+            try:
+                with open(self.exportPathname, 'r') as exportFile:
+                    path = exportFile.name
+                    self.exportTXT.SetValue(path)
+
+            except  IOError:
+                wx.LogError("Cannot Open File")
+
+    def onExport(self, event):
+
+        dataLeadDF = pd.DataFrame()
+        dataDF = pd.DataFrame(columns=[0, 1, 2, 3, 4, 5,6, 7, 8, 9])
+        dataTailDF = pd.DataFrame()
+
+        tempList = []
+        noneList = []
+        keepRows = []
+        for i in enumerate(self.dataframeEDIT["Keep"]):
+            if i[1]:
+                keepRows.append(i[0])
+                tempList.append(4)
+                noneList.append(None)
+        dataDF[0] = noneList
+        keepLength = len(keepRows)
+
+        if self.inputDataExt == '.TXT (LS)':
+            cols = [7,5,1,3]
+            valCol = 28 #app resistivity
+        elif self.inputDataExt =='.DAT (LS)':
+            cols = [5,7,3,1]
+            valCol = 9
+        else:
+            cols = [1,3,7,5]
+            valCol = 3
+
+        j=0
+        for c in cols:
+            for r in enumerate(keepRows):
+                dataDF.iloc[int(r[0]), int(c)] = round(float(self.xDF.iloc[int(r[1]),int(j)]),2)
+            j+=1
+
+        if self.includeTopoBx.GetValue() or (float(self.dataframeEDIT.iloc[0,self.xCols[0]+1]) > 0.0 and self.inputDataExt == '.DAT (LS)'):
+            self.getClosestElev()
+        else:
+            self.electrodeElevs = []
+            for i in self.electrodes:
+                self.electrodeElevs.append(0.00)
+
+        zCols = [2,4,6,8]
+
+        j = 0
+        for r in enumerate(self.dataframeEDIT["Keep"]):
+            if r[1]:
+                dataDF.iloc[j,9] = self.dataframeEDIT.iloc[r[0],valCol]
+
+                for z in zCols:
+                    i = self.electrodes.index(float(dataDF.iloc[j,z-1]))
+                    dataDF.iloc[j,z] = round(self.electrodeElevs[i],2)
+
+                j+=1
+
+        dataDF[0] = tempList
+
+        #Create Data Lead
+        dataLeadDF[0] = self.dataLead
+
+        if self.inputDataExt == '.DAT (SAS)':
+            dataLeadList = []
+            dataLeadList.append(self.dataLead[0][0])
+            dataLeadList.append(self.dataLead[1][0])
+            dataLeadList.append(11)
+            dataLeadList.append(self.dataLead[2][0])
+            dataLeadList.append('Type of measurement (0=app.resistivity,1=resistance)')
+            dataLeadList.append(0)
+            dataLeadList.append(keepLength)
+            dataLeadList.append(2)
+            dataLeadList.append(0)
+
+            dataLeadDF = pd.DataFrame(dataLeadList)
+        else:
+            dataLeadDF.iloc[4,0] = 'Type of measurement (0=app.resistivity,1=resistance)'
+            dataLeadDF.iloc[6,0] = str(int(keepLength))
+
+        for c in range(1, 10):
+            dataLeadDF[int(c)] = [None, None, None, None, None, None, None, None, None]
+
+        #Create Data Tail
+        for c in range(0, 10):
+            if c < 1:
+                dataTailDF[int(c)] = [0,     0,     0,    0,   0,    0,    0]
+            else:
+                dataTailDF[int(c)] = [None, None, None, None, None, None, None]
+
+        #print(dataLeadDF)
+        #print(dataDF)
+        #print(dataTailDF)
+
+        DFList = [dataLeadDF, dataDF, dataTailDF]
+
+        print("Concatenated: ")
+        self.exportDataframe = pd.concat(DFList, ignore_index=True, axis=0)
+
+        print(self.exportDataframe)
+        self.exportDataframe.to_csv(self.exportTXT.GetValue(), sep="\t", index=False, header=False)
+
+    def onCancel(self, event):
+        self.closeProgram()
+
+    def closeProgram(self):
+        self.Close()
+
+# Run the program
+if __name__ == '__main__':
+    app = wx.App()
+    frame = ERTAPP().Show()
+    app.MainLoop()
