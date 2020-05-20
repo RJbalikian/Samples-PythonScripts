@@ -1,5 +1,5 @@
 # PythonScripts
-Scripts Written in Python to automate geophysical data processing tasks
+Scripts Written in Python to automate geophysical data processing tasks.
 
 ## ERTData_AdvancedEditingofABEMOutputs
 Allows ERT geophysical data to be read in from ABEM Terrameter products (specifically, legacy Terrameter SAS4000 lund projects and data exported from the Terrameter LS in .dat or .txt formats. Optimized for the latter.). Graphically displays the data with pseudodepths and distances. Can edit out entire electrodes or based on the Percent Error of points based on other points at the same pseudodepth. Will automatically shift data to start at 0 if it does not already. Will add topography to data if imported in correct format (ID | x-Dist | elev_m | elev_ft (opt.)). Exports in general array format for inversion in Res2DInv. With installation of correct modules this should be portable across different devices.
@@ -10,5 +10,9 @@ Creates cross sections from .csv data with depths to various layers. Each layer 
 ## EXAMPLE_Elevation Surfacedown-Public.ipynb
 Jupyter notebook that separates well data into discrete layers that can be interpolated in GIS software.
 
+## ReadGPRHeaderInfo_EkkoExports_SensorsAndSoftware
+Python code (made in PyCharm) to read all header data from several projects/grids exported from Sensors and Software Noggin 1000 GPR unit
+
 ## EXAMPLE_Well Interval Statistics-Public.ipynb
 Jupyter notebook that calculates statistics from data processing for data quality assurance and control.
+
