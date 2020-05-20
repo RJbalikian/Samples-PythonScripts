@@ -10,9 +10,8 @@ Creates cross sections from .csv data with depths to various layers. Each layer 
 ## EXAMPLE_Elevation Surfacedown-Public.ipynb
 Jupyter notebook that separates well data into discrete layers that can be interpolated in GIS software.
 
-## ReadGPRHeaderInfo_EkkoExports_SensorsAndSoftware
-Python code (made in PyCharm) to read all header data from several projects/grids exported from Sensors and Software Noggin 1000 GPR unit
-
 ## EXAMPLE_Well Interval Statistics-Public.ipynb
 Jupyter notebook that calculates statistics from data processing for data quality assurance and control.
 
+## ReadGPRHeaderInfo_EkkoExports_SensorsAndSoftware
+Python code (made in PyCharm) to read all header data from several projects/grids exported from Sensors and Software Noggin 1000 GPR unit
