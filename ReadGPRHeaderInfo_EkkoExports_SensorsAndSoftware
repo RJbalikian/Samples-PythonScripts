@@ -1,0 +1,63 @@
+import pathlib
+import csv
+import pandas as pd
+
+#Directory should be a filepath pointing to the export folder, within which are the project directories
+directory = "...\\EXPORT26\\"
+
+#Use your own directory numbers here, should be strings or will need to convert later
+projects = ['03','04','07','08','11','12','15','16']
+
+#Grids within project. Each list item is a project. I have two grids per project, so the nested list has those grid numbers
+grids = [['03','04'], #3
+         ['02','04'], #4
+         ['01','03'], #7
+         ['01','03'], #8
+         ['02','04'], #11
+         ['01','02'], #12
+         ['02','04'], #15
+         ['01','02']] #16
+
+Lines = []
+
+for p in enumerate(projects):
+    for g in range(0,2):
+      
+        #this conditional is only applicable for the project it came from
+        if grids[p[0]][g] == '01':
+            plot = "NW"
+        elif grids[p[0]][g] == '02':
+            plot = "NE"
+        elif grids[p[0]][g] == '03':
+            plot = "SE"
+        else:
+            plot = "SW"
+
+        path = pathlib.Path(directory + 'PROJ' + p[1] +'\\'+'GRID'+grids[p[0]][g])
+        lines = path.glob('*.HD')
+        for l in lines:
+            with open(l) as HDFile:
+                fileData = csv.reader(HDFile)
+
+                fileLines = []
+                for row in fileData:
+                    fileLines.append(row)
+
+                fileLines2 = []
+                for r in enumerate(fileLines):
+                    if r[0] < 3:
+                        pass
+                    else:
+                        fileLines2.append(r[1][0].split('=')[1].strip())
+                fileLines2.append(p[1]+plot)
+                fileLines2.append(l.stem[5:])
+
+                Lines.append(fileLines2)
+
+        print('Finished with ' + p[1]+plot)
+        print('Lines is now ' + str(len(Lines)) + ' lines long.\n')
+
+cols = ['No Traces', 'No Pts/Trace', 'TimeZeroPt', 'TimeWin[ns]', 'StartPos', 'FinalPos', 'Step', 'PosUnits', 'NomFreq', 'AntennaSep', 'PulserVoltage', 'Stacks', 'SurveyMode', 'Odometer Cal [t/m]', 'StackingType', 'NogginSerialNo', 'DVLSerialNo','Plot','LineNo']
+dataframe = pd.DataFrame(Lines)
+dataframe.columns = cols
+dataframe.to_csv("...\\LineInfo.Txt")
