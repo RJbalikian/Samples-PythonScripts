@@ -1,28 +1,23 @@
 import pandas as pd
-import pyvista as pv
 import numpy as np
-import vtk
-
 import math
-import csv #?
+import csv
+import os
 import pathlib
 import wx
 import matplotlib
-#import matplotlib.pylab as pL
-#import matplotlib.pyplot as plt
 import matplotlib.backends.backend_wxagg as wxagg
-#import re
-#import scipy
-#import scipy.interpolate
-#import sys
+# import matplotlib.pylab as pL
+# import matplotlib.pyplot as plt
 
-#This script is derived from: https://www.hatarilabs.com/ih-en/3d-visualization-of-well-lithology-with-python-pyvista-and-vtk-tutorial
-#It uses a wxPython GUI to create vtk elevation surface and vtu well object, color-coded by lithology
+
+# This script is derived from: https://www.hatarilabs.com/ih-en/3d-visualization-of-well-lithology-with-python-pyvista-and-vtk-tutorial
+# It uses a wxPython GUI to create vtk elevation surface and vtu well object, color-coded by lithology
 
 class CreateWellVTKs(wx.Frame):
 
     def __init__(self):
-        wx.Frame.__init__(self, None, wx.ID_ANY, title='Create Well VTKs',pos=(100,100),size=(500,500))
+        wx.Frame.__init__(self, None, wx.ID_ANY, title='Create Well VTKs', pos=(100, 00), size=(500, 500))
 
         def setUpPanels(self):
             self.topPanel = wx.Panel(self, wx.ID_ANY, size = (1000, 80), name='Top Panel')
@@ -33,10 +28,11 @@ class CreateWellVTKs(wx.Frame):
             self.title = wx.StaticText(self.topPanel, wx.ID_ANY, 'Create Well VTKs')
 
         def inputSetup(self):
-            self.Spacer1 = wx.StaticText(self.topPanel, wx.ID_ANY, '   ')
-            self.Spacer2 = wx.StaticText(self.topPanel, wx.ID_ANY, '   ')
+            self.Spacer1T = wx.StaticText(self.topPanel, wx.ID_ANY, 'Elev. Unit')
+            self.Spacer2T = wx.StaticText(self.topPanel, wx.ID_ANY, '   ')
+            self.Spacer3T = wx.StaticText(self.topPanel, wx.ID_ANY, '   ')
+            self.Spacer4T = wx.StaticText(self.topPanel, wx.ID_ANY, 'Depth Unit')
             self.Spacer3 = wx.StaticText(self.bottomPanel, wx.ID_ANY, '   ')
-
 
             #Create gui to read in well Locations
             self.wellDataLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Input Well Location Data')
@@ -44,14 +40,15 @@ class CreateWellVTKs(wx.Frame):
             self.wellDataInputTxt.SetHint('Enter data file path here')
             self.wellDataBrowseBtn = wx.Button(self.topPanel, wx.ID_ANY, 'Browse')
             self.Bind(wx.EVT_BUTTON, self.onWellDataBrowse, self.wellDataBrowseBtn)
-
             self.readInWellDataBtn = wx.Button(self.topPanel, wx.ID_ANY, 'Read Well Data')
             self.Bind(wx.EVT_BUTTON, self.onWellDataReadIn, self.readInWellDataBtn)
+            self.viewRadiusInputTxt = wx.TextCtrl(self.topPanel, wx.ID_ANY, '')
+            self.viewRadiusInputTxt.SetHint('VTK out well radius')
 
-            self.surElevUnitLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Elevation Unit \n Input')
+            self.surElevUnitLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Input')
             self.surfElevUnitToggle = wx.ToggleButton(self.topPanel, wx.ID_ANY, 'Feet', size=(50, 25))
             self.surfElevUnitToggle.Bind(wx.EVT_TOGGLEBUTTON, self.ONsurfElevUnitChange)
-            self.intervalDepthUnitLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Depth Unit\n Input')
+            self.intervalDepthUnitLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Input')
             self.intervalDepthUnitToggle = wx.ToggleButton(self.topPanel, wx.ID_ANY, 'Feet', size=(50, 25))
             self.intervalDepthUnitToggle.Bind(wx.EVT_TOGGLEBUTTON, self.ONDepthUnitChange)
             self.surElevUnitOUTLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Output')
@@ -60,6 +57,20 @@ class CreateWellVTKs(wx.Frame):
             self.intervalDepthUnitOUTLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Output')
             self.intervalDepthUnitOUTToggle = wx.ToggleButton(self.topPanel, wx.ID_ANY, 'Feet', size=(50, 25))
             self.intervalDepthUnitOUTToggle.Bind(wx.EVT_TOGGLEBUTTON, self.ONOUTDepthUnitChange)
+
+            #Col Select GUI
+            self.selectXColLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'X Data')
+            self.selectXCol = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['East_Long'], name='East_Long')
+            self.selectYColLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Y Data')
+            self.selectYCol = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['North_Lat'], name='North_Lat')
+            self.selectSurfElevColLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Surface Elev. (Z)')
+            self.selectSurfElevCol = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['SurfElev'], name='SurfElev')
+            self.selectDepthTopLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Interval Top Depth')
+            self.selectDepthTop = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['Depth_Top'], name='Depth_Top')
+            self.selectDepthBotLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Interval Bot. Depth')
+            self.selectDepthBot = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['Depth_Bot'], name='Depth_Bot')
+            self.selectLithologyLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Lithology')
+            self.selectLithology = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['Lithology'], name='Lithology')
 
             #Input CRS GUI
             self.CRS_INLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Input CRS')
@@ -102,8 +113,8 @@ class CreateWellVTKs(wx.Frame):
             self.toolbar = wxagg.NavigationToolbar2WxAgg(self.canvas)
 
         def dataVizSetup(self):
-            self.setChartCRS = wx.ToggleButton(self.chartPanel,wx.ID_ANY,'Original CRS',size=(100,30))
-            self.setChartCRS.Bind(wx.EVT_BUTTON, self.OnSetChartCRS)
+            self.ViewMapOriginalBtn = wx.Button(self.chartPanel, wx.ID_ANY, 'Map View', size=(100, 30))
+            self.ViewMapOriginalBtn.Bind(wx.EVT_BUTTON, self.OnViewMapOriginal)
 
             self.NSSectionBtn = wx.Button(self.chartPanel, -1, "N-S Section", size=(100, 30))
             self.NSSectionBtn.Bind(wx.EVT_BUTTON, self.OnViewNSSection)
@@ -111,13 +122,13 @@ class CreateWellVTKs(wx.Frame):
             self.WESectionBtn = wx.Button(self.chartPanel, -1, "W-E Section", size=(100, 30))
             self.WESectionBtn.Bind(wx.EVT_BUTTON, self.OnViewWESection)
 
-            self.mapViewBtn = wx.Button(self.chartPanel, -1, "Transformed Map View", size=(100, 30))
-            self.mapViewBtn.Bind(wx.EVT_BUTTON, self.OnViewMap)
+            self.ViewMapTransformedBtn = wx.Button(self.chartPanel, -1, "Transformed Map View", size=(100, 30))
+            self.ViewMapTransformedBtn.Bind(wx.EVT_BUTTON, self.OnViewTransformedMap)
 
         #Set up bottom area GUI
         def bottomAreaSetup(self):
-            self.exportLabel = wx.StaticText(self.bottomPanel, wx.ID_ANY, 'Transform/Export Data')
-            self.exportTXT = wx.TextCtrl(self.bottomPanel, wx.ID_ANY, 'Enter Export Filepath Here')
+            self.exportLabel = wx.StaticText(self.bottomPanel, wx.ID_ANY, 'Output Directory')
+            self.exportTXT = wx.TextCtrl(self.bottomPanel, wx.ID_ANY, 'Enter Export Directory Here')
             self.exportBrowseBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Browse')
             self.Bind(wx.EVT_BUTTON, self.onExportBrowse, self.exportBrowseBtn)
 
@@ -131,12 +142,21 @@ class CreateWellVTKs(wx.Frame):
             self.baseSizer = wx.BoxSizer(wx.VERTICAL)
 
             self.inputSizer = wx.BoxSizer(wx.VERTICAL)
-            self.wellLocImportSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.wellDataImportSizer = wx.BoxSizer(wx.HORIZONTAL)
 
+            self.inputParametersSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.paramSizerV0 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV1 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV2 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV3 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV4 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV5 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV6 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV7 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV8 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV9 = wx.BoxSizer(wx.VERTICAL)
+            self.paramSizerV10 = wx.BoxSizer(wx.VERTICAL)
             self.CRS_InOutSizer = wx.BoxSizer(wx.HORIZONTAL)
-            self.unitsSizerR1 = wx.BoxSizer(wx.HORIZONTAL)
-            self.unitsSizerR2 = wx.BoxSizer(wx.HORIZONTAL)
-            self.unitsSizerV = wx.BoxSizer(wx.VERTICAL)
 
             self.inputInfoSizer = wx.BoxSizer(wx.HORIZONTAL)
             self.inputInfoLabelSizer = wx.BoxSizer(wx.VERTICAL)
@@ -150,32 +170,65 @@ class CreateWellVTKs(wx.Frame):
             self.OKCancelSizer = wx.BoxSizer(wx.HORIZONTAL)
 
         def addToSizers(self):
-            self.wellLocImportSizer.Add(self.wellDataLabel, 1, wx.ALL, 5)
-            self.wellLocImportSizer.Add(self.wellDataInputTxt, 6, wx.ALL, 5)
-            self.wellLocImportSizer.Add(self.wellDataBrowseBtn, 1, wx.ALL, 5)
-            self.wellLocImportSizer.Add(self.readInWellDataBtn, 1, wx.ALL, 5)
+            self.wellDataImportSizer.Add(self.wellDataLabel, 1, wx.ALL, 5)
+            self.wellDataImportSizer.Add(self.wellDataInputTxt, 6, wx.ALL, 5)
+            self.wellDataImportSizer.Add(self.wellDataBrowseBtn, 1, wx.ALL, 5)
+            self.wellDataImportSizer.Add(self.readInWellDataBtn, 1, wx.ALL, 5)
+            self.wellDataImportSizer.Add(self.viewRadiusInputTxt, 1, wx.ALL, 5)
 
-            self.unitsSizerR1.Add(self.surElevUnitLabel, 2, wx.ALL, 5)
-            self.unitsSizerR1.Add(self.surfElevUnitToggle, 1, wx.ALL, 5)
-            self.unitsSizerR1.Add(self.intervalDepthUnitToggle, 1, wx.ALL, 5)
-            self.unitsSizerR1.Add(self.intervalDepthUnitLabel, 2, wx.ALL, 5)
+            self.paramSizerV0.Add(self.selectXColLabel, 1, wx.ALL, 5)
+            self.paramSizerV0.Add(self.selectXCol, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV0.Add(self.CRS_INLabel, 1, wx.ALL, 5)
 
-            self.unitsSizerR2.Add(self.surElevUnitOUTLabel, 2, wx.ALL, 5)
-            self.unitsSizerR2.Add(self.surfElevUnitOUTToggle, 1, wx.ALL, 5)
-            self.unitsSizerR2.Add(self.intervalDepthUnitOUTToggle, 1, wx.ALL, 5)
-            self.unitsSizerR2.Add(self.intervalDepthUnitOUTLabel, 2, wx.ALL, 5)
+            self.paramSizerV1.Add(self.selectYColLabel, 1, wx.ALL, 5)
+            self.paramSizerV1.Add(self.selectYCol, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV1.Add(self.CRS_INInputTxt, 1, wx.ALL, 5)
 
-            self.unitsSizerV.Add(self.unitsSizerR1, 1, wx.ALL, 5)
-            self.unitsSizerV.Add(self.unitsSizerR2, 1, wx.ALL, 5)
+            self.paramSizerV3.Add(self.selectSurfElevColLabel, 1, wx.ALL, 5)
+            self.paramSizerV3.Add(self.selectSurfElevCol, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV3.Add(self.CRS_INChoice, 1, wx.ALL, 5)
 
-            self.CRS_InOutSizer.Add(self.CRS_INLabel, 1, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
-            self.CRS_InOutSizer.Add(self.CRS_INInputTxt, 2, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
-            self.CRS_InOutSizer.Add(self.CRS_INChoice, 1, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
-            self.CRS_InOutSizer.Add(self.TransformBx, 1, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
-            self.CRS_InOutSizer.Add(self.CRS_OUTLabel, 1, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
-            self.CRS_InOutSizer.Add(self.CRS_OUTInputTxt, 2, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
-            self.CRS_InOutSizer.Add(self.CRS_OUTChoice, 1, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
-            self.CRS_InOutSizer.Add(self.unitsSizerV, 5, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
+            self.CRS_InOutSizer.Add(self.TransformBx, 1, wx.ALL, 5)
+            self.CRS_InOutSizer.Add(self.CRS_OUTLabel, 1, wx.ALL, 5)
+            self.paramSizerV4.Add(self.selectDepthTopLabel, 1, wx.ALL, 5)
+            self.paramSizerV4.Add(self.selectDepthTop, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV4.Add(self.CRS_InOutSizer, 1, wx.ALL, 5)
+
+            self.paramSizerV5.Add(self.selectDepthBotLabel, 1, wx.ALL, 5)
+            self.paramSizerV5.Add(self.selectDepthBot, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV5.Add(self.CRS_OUTInputTxt, 1, wx.ALL, 5)
+
+            self.paramSizerV6.Add(self.selectLithologyLabel, 1, wx.ALL, 5)
+            self.paramSizerV6.Add(self.selectLithology, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV6.Add(self.CRS_OUTChoice, 1, wx.ALL, 5)
+
+            self.paramSizerV7.Add(self.Spacer1T, 1, wx.ALL, 5)
+            self.paramSizerV7.Add(self.surElevUnitLabel, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV7.Add(self.surElevUnitOUTLabel, 1, wx.ALL, 5)
+
+            self.paramSizerV8.Add(self.Spacer2T, 1, wx.ALL, 5)
+            self.paramSizerV8.Add(self.surfElevUnitToggle, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV8.Add(self.surfElevUnitOUTToggle, 1, wx.ALL | wx.EXPAND, 5)
+
+            self.paramSizerV9.Add(self.Spacer3T, 1, wx.ALL, 5)
+            self.paramSizerV9.Add(self.intervalDepthUnitToggle, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV9.Add(self.intervalDepthUnitOUTToggle, 1, wx.ALL | wx.EXPAND, 5)
+
+            self.paramSizerV10.Add(self.Spacer4T, 1, wx.ALL, 5)
+            self.paramSizerV10.Add(self.intervalDepthUnitLabel, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV10.Add(self.intervalDepthUnitOUTLabel, 1, wx.ALL, 5)
+
+            self.inputParametersSizer.Add(self.paramSizerV0, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV1, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV2, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV3, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV4, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV5, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV6, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV7, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV8, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV9, 1, wx.ALL, 5)
+            self.inputParametersSizer.Add(self.paramSizerV10, 1, wx.ALL, 5)
 
             self.inputInfoLabelSizer.Add(self.ProjectNameTxt, 1, wx.ALL, 5)
             self.inputInfoLabelSizer.Add(self.NumWellsTxt, 1, wx.ALL, 5)
@@ -189,13 +242,13 @@ class CreateWellVTKs(wx.Frame):
             self.inputInfoSizer.Add(self.inputInfoMsgSizer, 1, wx.ALL, 5)
 
             self.inputSizer.Add(self.title, 1, wx.ALIGN_CENTER, 5)
-            self.inputSizer.Add(self.wellLocImportSizer, 1, wx.ALIGN_CENTER, 5)
-            self.inputSizer.Add(self.CRS_InOutSizer, 1, wx.ALIGN_CENTER, 5)
+            self.inputSizer.Add(self.wellDataImportSizer, 1, wx.ALIGN_CENTER, 5)
+            self.inputSizer.Add(self.inputParametersSizer, 1, wx.ALIGN_CENTER, 5)
 
-            self.chartCtrlSizer.Add(self.setChartCRS, 1, wx.ALL, 5)
+            self.chartCtrlSizer.Add(self.ViewMapOriginalBtn, 1, wx.ALL, 5)
             self.chartCtrlSizer.Add(self.NSSectionBtn, 1, wx.ALL, 5)
             self.chartCtrlSizer.Add(self.WESectionBtn, 1, wx.ALL, 5)
-            self.chartCtrlSizer.Add(self.mapViewBtn, 1, wx.ALL, 5)
+            self.chartCtrlSizer.Add(self.ViewMapTransformedBtn, 1, wx.ALL, 5)
 
             self.chartSizer.Add(self.canvas, 12, wx.EXPAND)
             self.chartSizer.Add(self.toolbar, 1, wx.EXPAND)
@@ -226,7 +279,7 @@ class CreateWellVTKs(wx.Frame):
             self.baseSizer.Add(self.bottomPanel, 2, wx.EXPAND | wx.ALL, 2)
 
             self.SetSizer(self.baseSizer)
-            self.SetSize(1100, 1100)
+            self.SetSize(1300, 1100)
 
         def variableInfo(self):
             #This is not used, just to have a place to put explanation of variables
@@ -262,8 +315,9 @@ class CreateWellVTKs(wx.Frame):
         addToSizers(self)
         addToPanels(self)
 
-    def appTodo(self):
+    def apptodo(self):
         pass
+        #Make standardized lithology codes for colormap?
 
     def onWellDataBrowse(self, event):
         with wx.FileDialog(self, "Open Well Locations Data File", style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
@@ -281,28 +335,47 @@ class CreateWellVTKs(wx.Frame):
             except IOError:
                 wx.LogError("Cannot Open File")
 
-        #Automatically set default output path, cuts at _ and adds suffix
-        outPath = self.wellDataPath.stem.split('_')[0] + '_Wells.vtk'
-        self.exportTXT.SetValue(str(self.wellDataPath.with_name(outPath)))
-
         #Create directory for output files
         self.outDirPath = pathlib.Path(str(dirPath) + '/VTKFiles/')
         self.outDirPath.mkdir(parents=True, exist_ok=True)
+        self.outDirStr = str(self.outDirPath.parent) + '\\' + str(self.outDirPath.stem) + '\\'
+        self.exportTXT.SetValue(self.outDirStr)
 
     def onWellDataReadIn(self, event):
+        #Read in data to pandas dataframe
         self.wellsDF_IN = pd.read_csv(self.wellDataInputTxt.GetValue(), header=0, index_col=0, engine='python')
+
+        #Read in columns to choice boxes
+        choiceBoxList = [self.selectXCol, self.selectYCol, self.selectSurfElevCol, self.selectDepthTop, self.selectDepthBot, self.selectLithology]
+        INColList = self.wellsDF_IN.columns.tolist()
+        for c in enumerate(INColList):
+            INColList[c[0]] = str(c[1])
+
+        for CB in choiceBoxList:
+            CB.Clear()
+            for c in INColList:
+                CB.Append(c)
+
+        self.selectXCol.SetStringSelection('East_Long')
+        self.selectYCol.SetStringSelection('North_Lat')
+        self.selectSurfElevCol.SetStringSelection('SurfElev')
+        self.selectDepthTop.SetStringSelection('Depth_Top')
+        self.selectDepthBot.SetStringSelection('Depth_Bot')
+        self.selectLithology.SetStringSelection('Lithology')
+
         self.wellsDF_EDIT = self.wellsDF_IN.copy()
-        self.currentChart = 'Original'
+
+        lithoCol = self.selectLithology.GetStringSelection()
 
         #create a dictionary for the litho code
-        lithoDict = {}
+        self.lithoDict = {}
         l = 0
-        for litho in self.wellsDF_EDIT['Lithology'].unique():
-            lithoDict[litho] = l
+        for litho in self.wellsDF_EDIT[lithoCol].unique():
+            self.lithoDict[litho] = l
             l += 1
 
         #identify litho by the code in the dataframe
-        self.wellsDF_EDIT['LithoCode'] = self.wellsDF_EDIT['Lithology'].map(lithoDict)
+        self.wellsDF_EDIT['LithoCode'] = self.wellsDF_EDIT[lithoCol].map(self.lithoDict)
 
         self.generateData()
         self.originalChart()
@@ -310,16 +383,24 @@ class CreateWellVTKs(wx.Frame):
     def generateData(self):
         self.wellsDF_EDIT['WellBotElev'] = self.wellsDF_EDIT['SurfElev'] - self.wellsDF_EDIT['TotalDepth']
 
-        #Generate Initial Data
-        self.xCoords = self.wellsDF_EDIT['East_Long'].unique().tolist()
-        self.yCoords = self.wellsDF_EDIT['North_Lat'].unique().tolist()
-        self.surfElevs = self.wellsDF_EDIT['SurfElev'].unique().tolist()
+        xCol = self.selectXCol.GetStringSelection()
+        yCol = self.selectYCol.GetStringSelection()
+        zCol = self.selectSurfElevCol.GetStringSelection()
+        intDepthTopCol = self.selectDepthTop.GetStringSelection()
+        intDepthBotCol = self.selectDepthBot.GetStringSelection()
+        lithoCol = self.selectLithology.GetStringSelection()
+
+
+        # Generate Initial Data
+        self.xCoords = self.wellsDF_EDIT[xCol].unique().tolist()
+        self.yCoords = self.wellsDF_EDIT[yCol].unique().tolist()
+        self.surfElevs = self.wellsDF_EDIT[zCol].unique().tolist()
         self.wells = self.wellsDF_EDIT['WellID'].unique().tolist()
         self.wellDepths = self.wellsDF_EDIT['TotalDepth'].unique().tolist()
         self.wellBotElevs = self.wellsDF_EDIT['WellBotElev'].unique().tolist()
-        self.lithologies = self.wellsDF_EDIT['Lithology'].unique()
+        self.lithologies = self.wellsDF_EDIT[lithoCol].unique()
 
-        #Generate Secondary Data
+        # Generate Secondary Data
         self.minXCoord = min(self.xCoords)
         self.maxXCoord = max(self.xCoords)
         self.minYCoord = min(self.yCoords)
@@ -329,34 +410,10 @@ class CreateWellVTKs(wx.Frame):
         self.minSurfElev = min(self.surfElevs)
         self.maxSurfElev = max(self.surfElevs)
 
-        #Generate Information Messages
+        # Generate Information Messages
         self.ProjectNameMsg.SetLabelText(str(self.wellsDF_IN.loc[0, 'Project']))
         self.NumWellsMsg.SetLabelText(str(len(self.wells)) + ' Well(s)')
         self.NumIntervalsMsg.SetLabelText(str(len(self.wellsDF_IN)) + ' Total Intervals')
-
-    def originalChart(self):
-        if len(self.wells) == 1:
-            xRange = 10
-            yRange = 10
-        else:
-            xRange = self.maxXCoord - self.minXCoord
-            yRange = self.maxYCoord - self.minYCoord
-
-        elevRange = self.maxElev - self.minElev
-        surfElevRange = self.maxSurfElev - self.minSurfElev
-
-        ptSize = 5
-
-        self.figure.clear()
-        self.axes = self.figure.add_subplot(111)
-        self.axes.clear()
-        self.axes.scatter(self.xCoords, self.yCoords, s=ptSize, marker='h')
-        self.axes.set_xlim(self.minXCoord-(xRange*0.1), self.maxXCoord+(xRange*0.1))
-        self.axes.set_ylim(self.minYCoord-(yRange*0.1), self.maxYCoord+(yRange*0.1))
-        self.axes.set_xlabel('Easting')
-        self.axes.set_ylabel('Northing')
-
-        self.canvas.draw()
 
     def ONsurfElevUnitChange(self, event):
         self.surfElevUnitState = self.surfElevUnitToggle.GetValue()
@@ -402,52 +459,181 @@ class CreateWellVTKs(wx.Frame):
         coordsOUT = np.array(list(transformer.itransform(points)))
         self.wellsDF_EDIT['East_Long_' + str(self.CRS_OUTInputTxt.GetValue())] = coordsOUT[:, 0]
         self.wellsDF_EDIT['North_Lat_' + str(self.CRS_OUTInputTxt.GetValue())] = coordsOUT[:, 1]
-        print(self.wellsDF_EDIT)
 
-    def OnSetChartCRS(self, event):
-        pass
+    def OnViewMapOriginal(self, event):
+        self.originalChart()
 
-    def OnViewMap(self, event):
-        pass
+    def originalChart(self):
+        self.currentChart = 'Map View'
+        if len(self.wells) == 1:
+            xRange = 10
+            yRange = 10
+        else:
+            xRange = self.maxXCoord - self.minXCoord
+            yRange = self.maxYCoord - self.minYCoord
+
+        elevRange = self.maxElev - self.minElev
+        surfElevRange = self.maxSurfElev - self.minSurfElev
+
+        ptSize = 5
+
+        self.figure.clear()
+        self.axes.clear()
+        self.axes = self.figure.add_subplot(111)
+        self.axes.scatter(self.xCoords, self.yCoords, s=ptSize, marker='h')
+        self.axes.set_xlim(self.minXCoord-(xRange*0.1), self.maxXCoord+(xRange*0.1))
+        self.axes.set_ylim(self.minYCoord-(yRange*0.1), self.maxYCoord+(yRange*0.1))
+        self.axes.set_xlabel('Easting')
+        self.axes.set_ylabel('Northing')
+
+        self.canvas.draw()
 
     def OnViewNSSection(self, event):
-        pass
+        self.NSSectionChart()
+
+    def NSSectionChart(self):
+        self.minElev
+        self.maxElev
+        yRange = self.maxYCoord - self.minYCoord
+        zRange = self.maxElev - self.minElev
+        botDepthCol = self.selectDepthBot.GetStringSelection()
+        yCol = self.selectYCol.GetStringSelection()
+
+        i = 0
+        wellElevsList = []
+        for w in self.yCoords:
+            y = str(w)
+            wellElevsList.append(self.wellsDF_EDIT.query('North_Lat == @y').loc[:, botDepthCol].to_list())
+            wellElevsList[i].insert(0, 0)
+            for w2 in enumerate(wellElevsList[i]):
+                wellElevsList[i][w2[0]] = round(self.surfElevs[i] - w2[1], 2)
+            if wellElevsList[i][-1] > self.minElev:
+                wellElevsList[i].append(self.minElev)
+            i += 1
+
+        mostIntervals = 0
+        for i in wellElevsList:
+            currLength = len(i)
+            if currLength > mostIntervals:
+                mostIntervals = currLength
+
+        plotDataList = []
+        for lyr in range(0, mostIntervals):
+            plotDataList.append([])
+            for well in wellElevsList:
+                if lyr >= len(well):
+                    plotDataList[lyr].append(0)
+                else:
+                    plotDataList[lyr].append(well[lyr])
+
+        barWidths = yRange/len(self.wells) * 0.5
+        yPts = np.arange(self.minYCoord, self.maxYCoord, (yRange/len(self.wells)))
+        yPts = self.yCoords
+
+        self.figure.clear()
+        self.axes.clear()
+        self.axes = self.figure.add_subplot(111)
+
+        for pd in plotDataList:
+            self.axes.bar(yPts, pd, width=barWidths)
+
+        self.axes.set_xlim(self.minYCoord - (yRange * 0.1), self.maxYCoord + (yRange * 0.1))
+        self.axes.set_ylim(self.minElev - (zRange * 0.1), self.maxElev + (zRange * 0.1))
+        self.axes.set_xlabel('Northing')
+        self.axes.set_ylabel('Elev')
+
+        self.canvas.draw()
 
     def OnViewWESection(self, event):
+        self.EWSectionChart()
+
+    def EWSectionChart(self):
+        xRange = self.maxXCoord - self.minXCoord
+        zRange = self.maxElev - self.minElev
+        botDepthCol = self.selectDepthBot.GetStringSelection()
+        yCol = self.selectYCol.GetStringSelection()
+
+        i = 0
+        wellElevsList = []
+        for w in self.xCoords:
+            x = str(w)
+            wellElevsList.append(self.wellsDF_EDIT.query('East_Long == @x').loc[:, botDepthCol].to_list())
+            wellElevsList[i].insert(0, 0)
+            for w2 in enumerate(wellElevsList[i]):
+                wellElevsList[i][w2[0]] = round(self.surfElevs[i] - w2[1], 2)
+            if wellElevsList[i][-1] > self.minElev:
+                wellElevsList[i].append(self.minElev)
+            i += 1
+
+        mostIntervals = 0
+        for i in wellElevsList:
+            currLength = len(i)
+            if currLength > mostIntervals:
+                mostIntervals = currLength
+
+        plotDataList = []
+        for lyr in range(0, mostIntervals):
+            plotDataList.append([])
+            for well in wellElevsList:
+                if lyr >= len(well):
+                    plotDataList[lyr].append(0)
+                else:
+                    plotDataList[lyr].append(well[lyr])
+
+        barWidths = xRange/len(self.wells) * 0.5
+        xPts = self.xCoords
+
+        self.figure.clear()
+        self.axes.clear()
+        self.axes = self.figure.add_subplot(111)
+
+        for pd in plotDataList:
+            self.axes.bar(xPts, pd, width=barWidths)
+
+        self.axes.set_xlim(self.minXCoord - (xRange * 0.1), self.maxXCoord + (xRange * 0.1))
+        self.axes.set_ylim(self.minElev - (zRange * 0.1), self.maxElev + (zRange * 0.1))
+        self.axes.set_xlabel('Easting')
+        self.axes.set_ylabel('Elev')
+
+        self.canvas.draw()
+
+    def OnViewTransformedMap(self, event):
         pass
+        #self.transformedChart() # do this
 
     def onExportBrowse(self, event):
-        pass
+        with wx.DirDialog(self, message="Open Export Directory", defaultPath=self.outDirStr,
+                           style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST) as dirDialog:
+            if dirDialog.ShowModal() == wx.ID_CANCEL:
+                return
+            self.outDirPath = pathlib.Path(dirDialog.GetPath())
+            self.outDirStr = str(self.outDirPath.parent) + '\\' + str(self.outDirPath.stem) + '\\'
+            self.exportTXT.SetValue(self.outDirStr)
 
     def onExport(self, event):
+        xCol = self.selectXCol.GetStringSelection()
+        yCol = self.selectYCol.GetStringSelection()
+        zCol = self.selectSurfElevCol.GetStringSelection()
+        intDepthTopCol = self.selectDepthTop.GetStringSelection()
+        intDepthBotCol = self.selectDepthBot.GetStringSelection()
+        lithoCol = self.selectLithology.GetStringSelection()
+
         if self.TransformBx.GetValue():
-            xCol = 'East_Long_' + str(self.CRS_OUTInputTxt.GetValue())
-            yCol = 'North_Lat_' + str(self.CRS_OUTInputTxt.GetValue())
-        else:
-            xCol = 'East_Long'
-            yCol = 'North_Lat'
-
-        #if self.
-
-        # generation of surface as delanuay tringulation
-        elevArray = self.wellsDF_EDIT.loc[:, [xCol, yCol, 'SurfElev']].to_numpy()
-        elevCloud = pv.PolyData(elevArray)
-        surf = elevCloud.delaunay_2d()
-        surf.save(str(self.outDirPath) + '/' + str(self.filename) + '_elevSurf.vtk', binary=False)
+            xCol = str(xCol) + '_' + str(self.CRS_OUTInputTxt.GetValue())
+            yCol = str(yCol) + '_' + str(self.CRS_OUTInputTxt.GetValue())
 
         # generation of list arrays for the vtk
-        offsetList = []
-        linSec = []
-        linVerts = []
+        self.vtkPts = []
 
         surfElevUnitIN = self.surfElevUnitToggle.GetLabelText().lower()
         surfElevUnitOUT = self.surfElevUnitOUTToggle.GetLabelText().lower()
         intDepthUnitIN = self.intervalDepthUnitToggle.GetLabelText().lower()
         intDepthUnitOUT = self.intervalDepthUnitOUTToggle.GetLabelText().lower()
+        self.cellVals = []
 
         i = 0
         for index, values in self.wellsDF_EDIT.iterrows():
-            x, y, z = self.wellsDF_EDIT.loc[index][[xCol, yCol, 'SurfElev']]
+            x, y, z = self.wellsDF_EDIT.loc[index][[xCol, yCol, zCol]]
             if surfElevUnitIN == surfElevUnitOUT:
                 pass
             elif surfElevUnitIN == 'feet' and surfElevUnitOUT == 'meters':
@@ -455,33 +641,132 @@ class CreateWellVTKs(wx.Frame):
             elif surfElevUnitIN == 'meters' and surfElevUnitOUT == 'feet':
                 z = round(z / 0.3048, 1)
 
+            intDepthTop = self.wellsDF_EDIT.loc[index, intDepthTopCol]
+            intDepthBot = self.wellsDF_EDIT.loc[index, intDepthBotCol]
+            lithoCode = self.wellsDF_EDIT.loc[index, 'LithoCode']
+
+
             if intDepthUnitIN == intDepthUnitOUT:
-                topLitho = z - (values.Depth_top)
-                botLitho = z - (values.Depth_bot)
+                topLitho = z - (intDepthTop)
+                botLitho = z - (intDepthBot)
             elif intDepthUnitIN == 'feet' and intDepthUnitOUT == 'meters':
-                topLitho = z - round((values.Depth_top) * 0.3048, 2)
-                botLitho = z - round((values.Depth_bot) * 0.3048, 2)
+                topLitho = z - round((intDepthTop) * 0.3048, 2)
+                botLitho = z - round((intDepthBot) * 0.3048, 2)
             elif intDepthUnitIN == 'meters' and intDepthUnitOUT == 'feet':
-                topLitho = z - round((values.Depth_top) / 0.3048, 1)
-                botLitho = z - round((values.Depth_bot) / 0.3048, 1)
-            cellVerts = [[x, y, topLitho], [x, y, botLitho]]
-            offsetList.append(i * 3)
-            linSec = linSec + [2, 2 * i, 2 * i + 1]
-            linVerts = linVerts + cellVerts
+                topLitho = z - round((intDepthTop) / 0.3048, 1)
+                botLitho = z - round((intDepthBot) / 0.3048, 1)
+            # cellVerts = [[x, y, topLitho], [x, y, botLitho]]
+            self.createCircle(x, y, topLitho, botLitho, lithoCode)
             i += 1
 
-        offsetArray = np.array(offsetList)
-        linArray = np.array(linSec)
-        cellType = np.ones([i]) * 3
-        vertArray = np.array(linVerts)
+        vtkPtsLinesNo = int(len(self.vtkPts))
 
-        # create the unstructured grid and assign litho code
-        grid = pv.UnstructuredGrid(offsetArray, linArray, cellType, vertArray)
-        grid.cell_arrays["values"] = self.wellsDF_EDIT.LithoCode.values
-        grid.save(str(self.outDirPath) + '/' + str(self.filename) + '_wellLitho.vtu', binary=False)
+        self.cells = []
+        for i in range(0, vtkPtsLinesNo):
+            self.cells.append([4, (4*i)+1, (4*i)+2, (4*i)+3, (4*i)])
+
+        self.cellTypes = []
+        tot = vtkPtsLinesNo
+        fullLines = vtkPtsLinesNo//10
+        extra = vtkPtsLinesNo % 10
+        extraList = []
+        ctList = [9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+        for e in range(0, extra):
+            extraList.append(9)
+        for r in range(0, fullLines):
+            self.cellTypes.append(ctList)
+        self.cellTypes.append(extraList)
+
+        self.cellData = []
+        d = 0
+        for fl in range(0, fullLines):
+            dataLine = []
+            for i in range(0, 10):
+                dataLine.append(self.cellVals[d])
+                d += 1
+            self.cellData.append(dataLine)
+        dataLine = []
+        for e in range(0, extra):
+            dataLine.append(self.cellVals[d])
+            d += 1
+        self.cellData.append(dataLine)
+
+        self.headerData = "# vtk DataFile Version 3.0\nWellData\nASCII\n\nDATASET UNSTRUCTURED_GRID"
+        self.pointsHeader = 'POINTS ' + str(vtkPtsLinesNo*4) + ' float'
+        self.vtkPts = self.vtkPts
+        self.cellsHeader = str('\nCELLS ' + str(vtkPtsLinesNo) + ' ' + str(vtkPtsLinesNo*5))
+        self.cells = self.cells
+        self.cellTypesHeader = '\nCELL_TYPES ' + str(vtkPtsLinesNo)
+        self.cellTypes = self.cellTypes
+        self.cellDataHeader = '\nCELL_DATA ' + str(vtkPtsLinesNo) + '\nSCALARS Lithology float' + '\nLOOKUP_TABLE default'
+        self.cellData = self.cellData
+
+        outFile = str(self.outDirStr + str(self.filename) + '_wellLitho.vtk')
+        intFile = outFile[:-4] + '_int.vtk'
+        with open(intFile, 'w') as intF:
+            wr = csv.writer(intF, delimiter=' ', lineterminator='\n')
+            wr.writerow([self.headerData])
+            wr.writerow([self.pointsHeader])
+            for p in self.vtkPts:
+                wr.writerow(p)
+            wr.writerow([self.cellsHeader])
+            for c in self.cells:
+                wr.writerow(c)
+            wr.writerow([self.cellTypesHeader])
+            for ct in self.cellTypes:
+                wr.writerow(ct)
+            wr.writerow([self.cellDataHeader])
+            for cd in self.cellData:
+                wr.writerow(cd)
+
+        with open(intFile, 'r+') as intF, open(outFile, 'w+') as oF:
+            data = intF.read()
+            data = data.replace("\"", "")
+            data = data.replace("[", "")
+            data = data.replace("]", "")
+            data = data.replace(",", "")
+
+            oF.write(data)
+
+        os.remove(intFile)
+
+        # Write LithoCode Dictionary to file as well
+        self.lithoDict
+
+        outDictFile = str(self.outDirStr + str(self.filename) + '_wellLithoDict.txt')
+        with open(outDictFile, 'w') as oDF:
+            print(self.lithoDict, file=oDF)
 
     def onCancel(self, event):
         self.closeProgram()
+
+    def createCircle(self, x, y, tl, bl, lc):
+        PI = math.pi
+        if self.viewRadiusInputTxt.GetValue() == '':
+            r = 1.0
+        else:
+            r = float(self.viewRadiusInputTxt.GetValue())
+        radians = [[0, PI/3],
+                   [PI/3, 4*PI/6],
+                   [4*PI/6, PI],
+                   [PI, 7*PI/6],
+                   [7*PI/6, 9*PI/6],
+                   [9*PI/6, 2*PI]]
+
+        for rad in radians:
+            pts = []
+            xPt1 = round(x + r * math.cos(rad[0]), 2)
+            yPt1 = round(y + r * math.sin(rad[0]), 2)
+            xPt2 = round(x + r * math.cos(rad[1]), 2)
+            yPt2 = round(y + r * math.sin(rad[1]), 2)
+            pts.append([xPt1, yPt1, tl])
+            pts.append([xPt2, yPt2, tl])
+            pts.append([xPt2, yPt2, bl])
+            pts.append([xPt1, yPt1, bl])
+            self.vtkPts.append(pts)
+
+            self.cellVals.append(lc)
+
 
     def closeProgram(self):
         self.Close()
