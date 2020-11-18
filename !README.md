@@ -1,7 +1,7 @@
 # PythonScripts
 Scripts Written in Python to automate geophysical data processing tasks.
 
-##CreateVTKfromWellData
+## CreateVTKfromWellData
 Exports 3D VTK data from well data. Also creates 2D well sections in the app itself and maps it out. In future, will transform data to different projections as well.
 
 ## ERTData_AdvancedEditingofABEMOutputs
