@@ -1,6 +1,9 @@
 # PythonScripts
 Scripts Written in Python to automate geophysical data processing tasks.
 
+##CreateVTKfromWellData
+Exports 3D VTK data from well data. Also creates 2D well sections in the app itself and maps it out. In future, will transform data to different projections as well.
+
 ## ERTData_AdvancedEditingofABEMOutputs
 Allows ERT geophysical data to be read in from ABEM Terrameter products (specifically, legacy Terrameter SAS4000 lund projects and data exported from the Terrameter LS in .dat or .txt formats. Optimized for the latter.). Graphically displays the data with pseudodepths and distances. Can edit out entire electrodes or based on the Percent Error of points based on other points at the same pseudodepth. Will automatically shift data to start at 0 if it does not already. Will add topography to data if imported in correct format (ID | x-Dist | elev_m | elev_ft (opt.)). Exports in general array format for inversion in Res2DInv. With installation of correct modules this should be portable across different devices.
 
