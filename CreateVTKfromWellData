@@ -7,9 +7,6 @@ import pathlib
 import wx
 import matplotlib
 import matplotlib.backends.backend_wxagg as wxagg
-# import matplotlib.pylab as pL
-# import matplotlib.pyplot as plt
-
 
 # This script is derived from: https://www.hatarilabs.com/ih-en/3d-visualization-of-well-lithology-with-python-pyvista-and-vtk-tutorial
 # It uses a wxPython GUI to create vtk elevation surface and vtu well object, color-coded by lithology
@@ -59,6 +56,8 @@ class CreateWellVTKs(wx.Frame):
             self.intervalDepthUnitOUTToggle.Bind(wx.EVT_TOGGLEBUTTON, self.ONOUTDepthUnitChange)
 
             #Col Select GUI
+            self.selectWellIDLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Well IDs')
+            self.selectWellID = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['WellID'], name='WellID')
             self.selectXColLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'X Data')
             self.selectXCol = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['East_Long'], name='East_Long')
             self.selectYColLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Y Data')
@@ -73,6 +72,7 @@ class CreateWellVTKs(wx.Frame):
             self.selectLithology = wx.Choice(self.topPanel, id=wx.ID_ANY, choices=['Lithology'], name='Lithology')
 
             #Input CRS GUI
+            self.spacer = wx.StaticText(self.topPanel, wx.ID_ANY, ' ')
             self.CRS_INLabel = wx.StaticText(self.topPanel, wx.ID_ANY, 'Input CRS')
             self.CRS_INInputTxt = wx.TextCtrl(self.topPanel, wx.ID_ANY, '')
             self.CRS_INInputTxt.SetHint('Input CRS')
@@ -145,6 +145,7 @@ class CreateWellVTKs(wx.Frame):
             self.wellDataImportSizer = wx.BoxSizer(wx.HORIZONTAL)
 
             self.inputParametersSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.paramSizerV00= wx.BoxSizer(wx.VERTICAL)
             self.paramSizerV0 = wx.BoxSizer(wx.VERTICAL)
             self.paramSizerV1 = wx.BoxSizer(wx.VERTICAL)
             self.paramSizerV2 = wx.BoxSizer(wx.VERTICAL)
@@ -175,6 +176,10 @@ class CreateWellVTKs(wx.Frame):
             self.wellDataImportSizer.Add(self.wellDataBrowseBtn, 1, wx.ALL, 5)
             self.wellDataImportSizer.Add(self.readInWellDataBtn, 1, wx.ALL, 5)
             self.wellDataImportSizer.Add(self.viewRadiusInputTxt, 1, wx.ALL, 5)
+
+            self.paramSizerV00.Add(self.selectWellIDLabel, 1, wx.ALL, 5)
+            self.paramSizerV00.Add(self.selectWellID, 1, wx.ALL | wx.EXPAND, 5)
+            self.paramSizerV00.Add(self.spacer, 1, wx.ALL, 5)
 
             self.paramSizerV0.Add(self.selectXColLabel, 1, wx.ALL, 5)
             self.paramSizerV0.Add(self.selectXCol, 1, wx.ALL | wx.EXPAND, 5)
@@ -218,6 +223,7 @@ class CreateWellVTKs(wx.Frame):
             self.paramSizerV10.Add(self.intervalDepthUnitLabel, 1, wx.ALL | wx.EXPAND, 5)
             self.paramSizerV10.Add(self.intervalDepthUnitOUTLabel, 1, wx.ALL, 5)
 
+            self.inputParametersSizer.Add(self.paramSizerV00, 1, wx.ALL, 5)
             self.inputParametersSizer.Add(self.paramSizerV0, 1, wx.ALL, 5)
             self.inputParametersSizer.Add(self.paramSizerV1, 1, wx.ALL, 5)
             self.inputParametersSizer.Add(self.paramSizerV2, 1, wx.ALL, 5)
@@ -303,7 +309,68 @@ class CreateWellVTKs(wx.Frame):
             #self.maxElev
             #self.minSurfElev
             #self.maxSurfElev
+            #self.globalLithologyDict: standardized lithology dictionary that does not change, see just after "pass"
+            #self.lithoList: list of lists containing lithological codes for each well interval
             pass
+
+        self.globalLithoColors = {'BEDROCK': [0.0, 0.0, 0.0],
+                                    'VOID': [0.004, 0.004, 0.004],
+                                    'CLAY AND STONE': [0.2, 0.0, 0.4],
+                                    'DIRT AND BEDROCK': [0.4, 0.2, 0.0],
+                                    'DIRT AND STONE': [0.4, 0.078, 0.0],
+                                    'GRAVEL AND STONE': [0.627, 0.294, 0.0],
+                                    'BOULDER': [0.392, 0.392, 0.392],
+                                    'BOULDERS AND CLAY': [0.325, 0.275, 0.369],
+                                    'GRAVEL WITH BOULDERS': [0.627, 0.275, 0.0],
+                                    'DIRT AND GRAVEL': [0.627, 0.431, 0.275],
+                                    'GRAVEL': [0.824, 0.353, 0.0],
+                                    'GRAVEL WITH SAND': [0.824, 0.588, 0.0],
+                                    'GRAVEL AND CLAY': [0.745, 0.361, 0.392],
+                                    'GRAVEL WITH CLAY': [0.745, 0.361, 0.392],
+                                    'GRAVEL WITH CLAY STREAKS': [0.745, 0.361, 0.392],
+                                    'DIRT AND SAND': [0.647, 0.647, 0.392],
+                                    'SAND': [0.8, 0.8, 0.0],
+                                    'SAND AND CLAY': [0.6, 1.0, 1.0],
+                                    'SAND WITH CLAY': [0.6, 1.0, 1.0],
+                                    'SAND AND GRAVEL': [0.6, 0.6, 0.0],
+                                    'SAND WITH GRAVEL': [0.6, 0.6, 0.0],
+                                    'SAND WITH CLAY STREAKS': [0.6, 1.0, 1.0],
+                                    'SILT': [0.2, 0.6, 0.0],
+                                    'SILT AND GRAVEL': [0.471, 0.608, 0.196],
+                                    'SILT AND SAND': [0.816, 0.824, 0.51],
+                                    'SILT WITH SAND SEAMS': [0.816, 0.824, 0.51],
+                                    'CLAY': [0.4, 0.2, 1.0],
+                                    'DIRT AND CLAY': [0.6, 0.4, 0.6],
+                                    'CLAY AND GRAVEL': [0.529, 0.667, 0.788],
+                                    'CLAY WITH GRAVEL': [0.529, 0.667, 0.788],
+                                    'MUD AND GRAVEL': [0.529, 0.667, 0.788],
+                                    'CLAY AND SAND': [0.4, 0.8, 0.6],
+                                    'CLAY WITH SAND': [0.4, 0.8, 0.6],
+                                    'CLAY WITH GRAVEL SEAMS': [0.529, 0.667, 0.788],
+                                    'CLAY WITH SAND STREAKS': [0.4, 0.8, 0.6],
+                                    'FILL': [0.2, 0.2, 0.0],
+                                    'TILL': [0.4, 0.0, 0.2],
+                                    'DRIFT': [0.4, 0.0, 0.2],
+                                    'MUD': [0.4, 0.0, 0.4],
+                                    'MARL': [0.608, 0.608, 0.333],
+                                    'ORGANIC MATERIAL': [0.322, 0.318, 0.114],
+                                    'DIRT': [0.322, 0.318, 0.114],
+                                    'SILTY CLAY': [0.0, 0.502, 1.0],
+                                    'SANDY CLAY': [0.6, 0.8, 1.0],
+                                    'SANDY CLAY LOAM': [0.239, 0.345, 0.447],
+                                    'CLAY LOAM': [0.11, 0.051, 0.306],
+                                    'SILTY CLAY LOAM': [0.0, 0.227, 0.451],
+                                    'SILT LOAM': [0.0, 0.451, 0.212],
+                                    'SILTY LOAM': [0.0, 0.267, 0.125],
+                                    'LOAM': [0.314, 0.333, 0.239],
+                                    'SANDY LOAM': [0.443, 0.467, 0.11],
+                                    'SILTY SAND': [0.816, 0.824, 0.51],
+                                    'LOAMY SAND': [0.612, 0.647, 0.11],
+                                    'SOIL': [0.357, 0.31, 0.153],
+                                    'OTHER': [1.0, 0.0, 1.0],
+                                    'UNKNOWN': [0.784, 0.784, 0.784]}
+
+        self.localLithologyColors = self.globalLithoColors.copy()
 
         setUpPanels(self)
         inputSetup(self)
@@ -314,10 +381,9 @@ class CreateWellVTKs(wx.Frame):
         sizersSetup(self)
         addToSizers(self)
         addToPanels(self)
-
+        
     def apptodo(self):
         pass
-        #Make standardized lithology codes for colormap?
 
     def onWellDataBrowse(self, event):
         with wx.FileDialog(self, "Open Well Locations Data File", style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
@@ -346,7 +412,7 @@ class CreateWellVTKs(wx.Frame):
         self.wellsDF_IN = pd.read_csv(self.wellDataInputTxt.GetValue(), header=0, index_col=0, engine='python')
 
         #Read in columns to choice boxes
-        choiceBoxList = [self.selectXCol, self.selectYCol, self.selectSurfElevCol, self.selectDepthTop, self.selectDepthBot, self.selectLithology]
+        choiceBoxList = [self.selectWellID, self.selectXCol, self.selectYCol, self.selectSurfElevCol, self.selectDepthTop, self.selectDepthBot, self.selectLithology]
         INColList = self.wellsDF_IN.columns.tolist()
         for c in enumerate(INColList):
             INColList[c[0]] = str(c[1])
@@ -356,6 +422,8 @@ class CreateWellVTKs(wx.Frame):
             for c in INColList:
                 CB.Append(c)
 
+        #Get default value
+        self.selectWellID.SetStringSelection('WellID')
         self.selectXCol.SetStringSelection('East_Long')
         self.selectYCol.SetStringSelection('North_Lat')
         self.selectSurfElevCol.SetStringSelection('SurfElev')
@@ -383,6 +451,7 @@ class CreateWellVTKs(wx.Frame):
     def generateData(self):
         self.wellsDF_EDIT['WellBotElev'] = self.wellsDF_EDIT['SurfElev'] - self.wellsDF_EDIT['TotalDepth']
 
+        wellID = self.selectWellID.GetStringSelection() 
         xCol = self.selectXCol.GetStringSelection()
         yCol = self.selectYCol.GetStringSelection()
         zCol = self.selectSurfElevCol.GetStringSelection()
@@ -395,7 +464,7 @@ class CreateWellVTKs(wx.Frame):
         self.xCoords = self.wellsDF_EDIT[xCol].unique().tolist()
         self.yCoords = self.wellsDF_EDIT[yCol].unique().tolist()
         self.surfElevs = self.wellsDF_EDIT[zCol].unique().tolist()
-        self.wells = self.wellsDF_EDIT['WellID'].unique().tolist()
+        self.wells = self.wellsDF_EDIT[wellID].unique().tolist()
         self.wellDepths = self.wellsDF_EDIT['TotalDepth'].unique().tolist()
         self.wellBotElevs = self.wellsDF_EDIT['WellBotElev'].unique().tolist()
         self.lithologies = self.wellsDF_EDIT[lithoCol].unique()
@@ -485,116 +554,121 @@ class CreateWellVTKs(wx.Frame):
         self.axes.set_ylim(self.minYCoord-(yRange*0.1), self.maxYCoord+(yRange*0.1))
         self.axes.set_xlabel('Easting')
         self.axes.set_ylabel('Northing')
-
+        for i, well in enumerate(self.wells):
+            self.axes.text(self.xCoords[i], self.yCoords[i], well)
         self.canvas.draw()
 
     def OnViewNSSection(self, event):
         self.NSSectionChart()
 
     def NSSectionChart(self):
-        self.minElev
-        self.maxElev
-        yRange = self.maxYCoord - self.minYCoord
-        zRange = self.maxElev - self.minElev
-        botDepthCol = self.selectDepthBot.GetStringSelection()
-        yCol = self.selectYCol.GetStringSelection()
-
-        i = 0
-        wellElevsList = []
-        for w in self.yCoords:
-            y = str(w)
-            wellElevsList.append(self.wellsDF_EDIT.query('North_Lat == @y').loc[:, botDepthCol].to_list())
-            wellElevsList[i].insert(0, 0)
-            for w2 in enumerate(wellElevsList[i]):
-                wellElevsList[i][w2[0]] = round(self.surfElevs[i] - w2[1], 2)
-            if wellElevsList[i][-1] > self.minElev:
-                wellElevsList[i].append(self.minElev)
-            i += 1
-
-        mostIntervals = 0
-        for i in wellElevsList:
-            currLength = len(i)
-            if currLength > mostIntervals:
-                mostIntervals = currLength
-
-        plotDataList = []
-        for lyr in range(0, mostIntervals):
-            plotDataList.append([])
-            for well in wellElevsList:
-                if lyr >= len(well):
-                    plotDataList[lyr].append(0)
-                else:
-                    plotDataList[lyr].append(well[lyr])
-
-        barWidths = yRange/len(self.wells) * 0.5
-        yPts = np.arange(self.minYCoord, self.maxYCoord, (yRange/len(self.wells)))
-        yPts = self.yCoords
-
-        self.figure.clear()
-        self.axes.clear()
-        self.axes = self.figure.add_subplot(111)
-
-        for pd in plotDataList:
-            self.axes.bar(yPts, pd, width=barWidths)
-
-        self.axes.set_xlim(self.minYCoord - (yRange * 0.1), self.maxYCoord + (yRange * 0.1))
-        self.axes.set_ylim(self.minElev - (zRange * 0.1), self.maxElev + (zRange * 0.1))
-        self.axes.set_xlabel('Northing')
-        self.axes.set_ylabel('Elev')
-
-        self.canvas.draw()
+        self.currentChart = "NS Section"
+        self.barChart()
 
     def OnViewWESection(self, event):
         self.EWSectionChart()
 
     def EWSectionChart(self):
-        xRange = self.maxXCoord - self.minXCoord
-        zRange = self.maxElev - self.minElev
+        self.currentChart = "EW Section"
+        self.barChart()
+
+    def barChart(self):
         botDepthCol = self.selectDepthBot.GetStringSelection()
-        yCol = self.selectYCol.GetStringSelection()
+        zRange = self.maxElev - self.minElev
+        if self.currentChart == 'EW Section':
+            Range = self.maxXCoord - self.minXCoord
+            barWidths = Range/len(self.wells) * 0.54
+            maxCoord = self.maxXCoord
+            minCoord = self.minXCoord
+            Pts = np.arange(self.minXCoord, self.maxXCoord, (Range/len(self.wells)))
+            Pts = self.xCoords
+            axisLabel = "West-East Section \n (East is right)"
+        elif self.currentChart == 'NS Section':
+            Range = self.maxYCoord - self.minYCoord
+            barWidths = Range/len(self.wells) * 0.5
+            maxCoord = self.maxYCoord
+            minCoord = self.minYCoord
+            Pts = np.arange(self.minYCoord, self.maxYCoord, (Range/len(self.wells)))
+            Pts = self.yCoords
+            axisLabel = "South-North Section \n (North is right)"
+
 
         i = 0
         wellElevsList = []
-        for w in self.xCoords:
-            x = str(w)
-            wellElevsList.append(self.wellsDF_EDIT.query('East_Long == @x').loc[:, botDepthCol].to_list())
-            wellElevsList[i].insert(0, 0)
+        lithoList = []
+
+        for w in self.wells:
+            #Create list with only bottom depth of each interval from current well, filtered by Y-Coord
+            wellElevsList.append(self.wellsDF_EDIT.query('WellID == @w').loc[:, botDepthCol].to_list())
+            wellElevsList[i].insert(0, 0) #Add in 0-Depth at top of well to get all interval values
+            
+            #Rounds elevations to 2 decimal points
             for w2 in enumerate(wellElevsList[i]):
                 wellElevsList[i][w2[0]] = round(self.surfElevs[i] - w2[1], 2)
+
+            #Adds the chart's base/minimum elevation to each list if it is not already in there
             if wellElevsList[i][-1] > self.minElev:
                 wellElevsList[i].append(self.minElev)
             i += 1
+            
+            #For each well, adds a list of lithologies for all intervals
+            lithoCol = self.selectLithology.GetStringSelection()
+            lithoList.append(self.wellsDF_EDIT.query('WellID == @w').loc[:, lithoCol].to_list())
 
+        #Find the most intervals per well, to use for iterating later
         mostIntervals = 0
         for i in wellElevsList:
             currLength = len(i)
             if currLength > mostIntervals:
                 mostIntervals = currLength
 
+        #Iterate through all wells, adds lyr number in as colorcode
         plotDataList = []
-        for lyr in range(0, mostIntervals):
+        plotColors = []
+        self.legendDict = {}
+        for lyr in range(0, mostIntervals): #Iterate through each possible layer
             plotDataList.append([])
-            for well in wellElevsList:
-                if lyr >= len(well):
-                    plotDataList[lyr].append(0)
-                else:
+            plotColors.append([])
+            w = 0 #well iterator, starts over for each layer
+            for well in wellElevsList: #Iterate through each Well
+                if lyr >= len(well)-1:
+                    plotDataList[lyr].append(self.minElev - (zRange * 0.1))
+                    plotColors[lyr].append([1,1,1])
+                else: #if the well contains the number of layers that we are currently on
+                    
+                    litho = lithoList[w][lyr].upper()
+                    if litho not in self.localLithologyColors:
+                        self.localLithologyColors[litho] = [1,0,0]
+                        plotColors[lyr].append(self.localLithologyColors[litho])
+                        self.legendDict[litho] = [1,0,0]
+                    else:
+                        plotColors[lyr].append(self.localLithologyColors[litho])
+                        self.legendDict[litho] = self.localLithologyColors[litho]
                     plotDataList[lyr].append(well[lyr])
-
-        barWidths = xRange/len(self.wells) * 0.5
-        xPts = self.xCoords
+                w += 1
 
         self.figure.clear()
         self.axes.clear()
         self.axes = self.figure.add_subplot(111)
 
-        for pd in plotDataList:
-            self.axes.bar(xPts, pd, width=barWidths)
+        for pd in enumerate(plotDataList):
+            for dp in enumerate(pd[1]):
+                c = plotColors[pd[0]][dp[0]]
+                self.axes.bar(Pts[dp[0]], dp[1], width=barWidths, color=c)
 
-        self.axes.set_xlim(self.minXCoord - (xRange * 0.1), self.maxXCoord + (xRange * 0.1))
-        self.axes.set_ylim(self.minElev - (zRange * 0.1), self.maxElev + (zRange * 0.1))
-        self.axes.set_xlabel('Easting')
+        self.axes.set_xlim(minCoord - (Range * 0.1), maxCoord + (Range * 0.1))
+        self.axes.set_ylim(self.minElev - (zRange * 0.1), self.maxElev + (zRange * 0.35))
+        self.axes.set_xlabel(axisLabel)
         self.axes.set_ylabel('Elev')
+        self.axes.set_xticks(Pts)
+        self.axes.set_xticklabels(self.wells, rotation=-45)
 
+        legendList = []
+        for item in self.legendDict:
+            legendList.append(matplotlib.patches.Patch(color=self.legendDict[item], label=item))
+        numCols = math.ceil(len(legendList)/5)
+
+        self.axes.legend(handles=legendList,ncol=numCols)
         self.canvas.draw()
 
     def OnViewTransformedMap(self, event):
@@ -647,15 +721,14 @@ class CreateWellVTKs(wx.Frame):
 
 
             if intDepthUnitIN == intDepthUnitOUT:
-                topLitho = z - (intDepthTop)
-                botLitho = z - (intDepthBot)
+                topLitho = z - round(intDepthTop, 3)
+                botLitho = z - round(intDepthBot, 3)
             elif intDepthUnitIN == 'feet' and intDepthUnitOUT == 'meters':
                 topLitho = z - round((intDepthTop) * 0.3048, 2)
                 botLitho = z - round((intDepthBot) * 0.3048, 2)
             elif intDepthUnitIN == 'meters' and intDepthUnitOUT == 'feet':
                 topLitho = z - round((intDepthTop) / 0.3048, 1)
                 botLitho = z - round((intDepthBot) / 0.3048, 1)
-            # cellVerts = [[x, y, topLitho], [x, y, botLitho]]
             self.createCircle(x, y, topLitho, botLitho, lithoCode)
             i += 1
 
@@ -759,6 +832,8 @@ class CreateWellVTKs(wx.Frame):
             yPt1 = round(y + r * math.sin(rad[0]), 2)
             xPt2 = round(x + r * math.cos(rad[1]), 2)
             yPt2 = round(y + r * math.sin(rad[1]), 2)
+            tl = round(tl, 3)
+            bl = round(bl, 3)
             pts.append([xPt1, yPt1, tl])
             pts.append([xPt2, yPt2, tl])
             pts.append([xPt2, yPt2, bl])
@@ -766,7 +841,6 @@ class CreateWellVTKs(wx.Frame):
             self.vtkPts.append(pts)
 
             self.cellVals.append(lc)
-
 
     def closeProgram(self):
         self.Close()
