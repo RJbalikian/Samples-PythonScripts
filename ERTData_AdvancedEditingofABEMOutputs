@@ -1,11 +1,10 @@
-##Written in/for Jetbrains PyCharm
-
 import math
 import pandas as pd
 import csv
 import pathlib
 import wx
 import matplotlib
+import matplotlib.pylab as pL
 import matplotlib.pyplot as plt
 import matplotlib.backends.backend_wxagg as wxagg
 import re
@@ -13,8 +12,10 @@ import numpy as np
 import scipy
 import scipy.interpolate
 import sys
-#from mpl_toolkits.mplot3d import Axes3D
 #import wx.lib.inspection as wxli
+
+#This is a wxPython app that helps in analysis of ERT data
+#Designed to help clean data exported from Abem Terrameter LS. .Txt outputs prioritized, also works with .dat outputs
 
 class ERTAPP(wx.Frame):
 
@@ -28,15 +29,15 @@ class ERTAPP(wx.Frame):
             self.infoPanel = wx.Panel(self, wx.ID_ANY,size = (1000,50),name='Info Panel')
             self.chartPanel = wx.Panel(self, wx.ID_ANY,size = (1000,500),name='Chart Panel')
             self.bottomPanel= wx.Panel(self, wx.ID_ANY,size = (1000,130),name='Bottom Panel')
-    #For details on creating panels, see here: https://stackoverflow.com/questions/31286082/matplotlib-in-wxpython-with-multiple-panels
-
+    #Set up Title
         def titleSetup(self):
             bmp = wx.ArtProvider.GetBitmap(wx.ART_INFORMATION, wx.ART_OTHER, (4, 4))
             self.titleIco = wx.StaticBitmap(self.topPanel, wx.ID_ANY, bmp)
             self.title = wx.StaticText(self.topPanel, wx.ID_ANY, 'Advanced ERT Editing')
 
-    #Declare inputs for first row
+    #Declare variables for app
         def inputSetup(self):
+            #Declare variables for inputs
             bmp = wx.ArtProvider.GetBitmap(wx.ART_TIP, wx.ART_OTHER, (4, 4))
             self.inputOneIco = wx.StaticBitmap(self.topPanel, wx.ID_ANY, bmp)
             self.labelOne = wx.StaticText(self.topPanel, wx.ID_ANY, 'Input ERT Data')
@@ -48,16 +49,13 @@ class ERTAPP(wx.Frame):
             self.readInFileBtn = wx.Button(self.topPanel, wx.ID_ANY, 'Read Data')
             self.Bind(wx.EVT_BUTTON, self.onReadIn, self.readInFileBtn)
 
-            self.inputDataType = wx.Choice(self.topPanel, id=wx.ID_ANY,choices=['.DAT (LS)','.TXT (LS)','.DAT (SAS)'],name='.DAT (LS)')
+            self.inputDataType = wx.Choice(self.topPanel, id=wx.ID_ANY,choices=['.DAT (LS)','.TXT (LS)','.DAT (SAS)', '.VTK', '.XYZ'],name='.TXT (LS)')
             self.Bind(wx.EVT_CHOICE,self.onDataType,self.inputDataType)
 
             self.autoShiftBx = wx.CheckBox(self.topPanel,wx.ID_ANY, 'Auto Shift?')
             self.autoShiftBx.SetValue(True)
 
-            #Row Two item(s)
-            #self.msgLabelOne = wx.StaticText(self.topPanel, wx.ID_ANY, '')
-
-            #Row 3 item(s)
+            #Declare variables for information panel
             self.TxtProfileName = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Profile Name: ')
             self.TxtProfileRange = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Profile Length: ')
             self.TxtDataPts = wx.StaticText(self.infoPanel, wx.ID_ANY, 'Data Points: ')
@@ -75,7 +73,7 @@ class ERTAPP(wx.Frame):
             self.msgProjectName = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
             self.msgArray = wx.StaticText(self.infoPanel, wx.ID_ANY, '')
 
-    # DataViz Area item(s)
+    # Declare variables for DataViz Area item(s) and chart panel
         def dataVizSetup(self):
             self.editSlider = wx.Slider(self.chartPanel, pos=(200,0), id=wx.ID_ANY, style=wx.SL_TOP | wx.SL_AUTOTICKS | wx.SL_LABELS, name='Edit Data')
             self.Bind(wx.EVT_SCROLL, self.onSliderEditEVENT, self.editSlider)
@@ -85,12 +83,38 @@ class ERTAPP(wx.Frame):
             self.dataVizInput = wx.TextCtrl(self.chartPanel, wx.ID_ANY, '')
 
             self.dataVizInputBtn = wx.Button(self.chartPanel, -1, "Use Value")
-            self.dataVizInputBtn.Bind(wx.EVT_BUTTON, self.ONdataVizInput)
+            self.Bind(wx.EVT_BUTTON, self.ONdataVizInput, self.dataVizInputBtn)
 
             self.saveEditsBtn = wx.Button(self.chartPanel, -1, "Save Edits")
             self.saveEditsBtn.Bind(wx.EVT_BUTTON, self.ONSaveEdits)
             self.saveEditsBtn.SetBackgroundColour((100,175,100))
             self.currentChart = 'Graph'
+
+            self.editDataChoiceList = ['AppResist','Resistance','Electrode x-Dists','Variance','PctErr','PseudoX','PseudoZ']
+            self.editDataChoiceBool = []
+            self.editDataChoiceBool.append([False]*len(self.editDataChoiceList))
+            self.editDataChoiceBool.append([False]*len(self.editDataChoiceList))
+            self.editDataValues = []
+            for i in self.editDataChoiceList:
+                self.editDataValues.append([0,0])
+
+            self.editDataType = wx.Choice(self.chartPanel, id=wx.ID_ANY,choices=self.editDataChoiceList,name='Edit Data')
+            self.editDataType.Bind(wx.EVT_CHOICE, self.onSelectEditDataType)
+            self.setEditToggleBtn = wx.ToggleButton(self.chartPanel,wx.ID_ANY,'Unused',size=(25,30))
+            self.setEditToggleBtn.Bind(wx.EVT_TOGGLEBUTTON, self.onSetEditToggle)
+            self.labelMinRem = wx.StaticText(self.chartPanel, wx.ID_ANY, 'Min.')
+            self.inputTxtMinRem = wx.TextCtrl(self.chartPanel, wx.ID_ANY,style=wx.TE_PROCESS_ENTER, name='')
+            self.inputTxtMinRem.Bind(wx.EVT_TEXT_ENTER, self.onEditDataValueChangeEvent)
+            self.labelMaxRem = wx.StaticText(self.chartPanel, wx.ID_ANY,'Max.')
+            self.inputTxtMaxRem = wx.TextCtrl(self.chartPanel, wx.ID_ANY,style=wx.TE_PROCESS_ENTER,name= '')
+            self.inputTxtMaxRem.Bind(wx.EVT_TEXT_ENTER, self.onEditDataValueChangeEvent)
+            self.editTypeToggleBtn = wx.ToggleButton(self.chartPanel,wx.ID_ANY,'Pts in Range',size=(25,60))
+            self.editTypeToggleBtn.Bind(wx.EVT_TOGGLEBUTTON, self.onEditTypeToggle)
+            self.editLogicToggleBtn = wx.ToggleButton(self.chartPanel,wx.ID_ANY,'OR',size=(25,25))
+            self.editLogicToggleBtn.Bind(wx.EVT_TOGGLEBUTTON, self.onLogicToggle)
+            self.removePtsBtn = wx.Button(self.chartPanel, -1, "Remove Points")
+            self.removePtsBtn.SetBackgroundColour((100,175,100))
+            self.Bind(wx.EVT_BUTTON, self.onRemovePts, self.removePtsBtn)
 
             self.electrodeToggleBtn = wx.ToggleButton(self.chartPanel,wx.ID_ANY,'On',size=(25,25))
             self.electrodeToggleBtn.Bind(wx.EVT_TOGGLEBUTTON, self.ONtoggle)
@@ -110,12 +134,14 @@ class ERTAPP(wx.Frame):
             self.reviewBtn = wx.Button(self.chartPanel, -1, "Review Edits", size=(100, 15))
             self.reviewBtn.Bind(wx.EVT_BUTTON, self.reviewEvent)
 
+    #Declare variables for output/export area
         def bottomAreaSetup(self):
-            # Row 4 items
+            self.reverseBx = wx.CheckBox(self.bottomPanel,wx.ID_ANY, 'Reverse Profile')
             self.labelGPSIN = wx.StaticText(self.bottomPanel, wx.ID_ANY, 'GPS Data')
             self.inputTxtGPS = wx.TextCtrl(self.bottomPanel, wx.ID_ANY, 'Enter GPS Filepath Here')
             self.inputGPSBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Browse')
             self.Bind(wx.EVT_BUTTON, self.onGPSBrowse, self.inputGPSBtn)
+            self.Bind(wx.EVT_CHECKBOX, self.onReverse, self.reverseBx)
 
             self.dataEditMsg = wx.StaticText(self.bottomPanel, wx.ID_ANY, '')
 
@@ -124,8 +150,8 @@ class ERTAPP(wx.Frame):
             self.inputTopoBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Browse')
             self.includeTopoBx = wx.CheckBox(self.bottomPanel,wx.ID_ANY, 'Include Topography')
             self.Bind(wx.EVT_BUTTON, self.onTopoBrowse, self.inputTopoBtn)
+            self.Bind(wx.EVT_CHECKBOX, self.onIncludeTopo, self.includeTopoBx)
 
-            #Bottom Row items
             self.saveBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Export and Save Data')
             self.cancelBtn = wx.Button(self.bottomPanel, wx.ID_ANY, 'Cancel')
             self.Bind(wx.EVT_BUTTON, self.onExport, self.saveBtn)
@@ -149,7 +175,8 @@ class ERTAPP(wx.Frame):
             self.axes.set_ylabel('Depth (m)')
 
             self.toolbar = wxagg.NavigationToolbar2WxAgg(self.canvas)
-
+    
+    #Set up sizers that items will be placed inside
         def sizersSetup(self):
             #Set up sizers
             self.baseSizer       = wx.BoxSizer(wx.VERTICAL)
@@ -169,14 +196,15 @@ class ERTAPP(wx.Frame):
             self.chartSizer = wx.BoxSizer(wx.VERTICAL)
             self.dataVizSizer = wx.BoxSizer(wx.HORIZONTAL)
             self.vizInfoSizer = wx.BoxSizer(wx.HORIZONTAL)
+            self.dataEditSizer = wx.BoxSizer(wx.HORIZONTAL)
 
             self.bottomSizer = wx.BoxSizer(wx.VERTICAL)
             self.GPSSizer = wx.BoxSizer(wx.HORIZONTAL)
             self.TopoSizer = wx.BoxSizer(wx.HORIZONTAL)
             self.botSizer = wx.BoxSizer(wx.HORIZONTAL)
 
+    #Add items to sizers
         def addtoSizers(self):
-            #Add items to sizers
             self.titleSizer.Add(self.title, 0, wx.ALIGN_CENTER)
 
             self.inputSizer.Add(self.labelOne, 1,wx.ALIGN_CENTER,5)
@@ -224,15 +252,27 @@ class ERTAPP(wx.Frame):
             self.ctrlSizer.Add(self.addTopoBtn, 2, wx.ALL, 5)
             self.ctrlSizer.Add(self.reviewBtn,1,wx.ALL,5)
 
+            self.dataEditSizer.Add(self.editDataType,5, wx.ALL, 5)
+            self.dataEditSizer.Add(self.setEditToggleBtn,2,wx.ALL,5)
+            self.dataEditSizer.Add(self.editTypeToggleBtn,3,wx.ALL,5)
+            self.dataEditSizer.Add(self.labelMinRem, 2, wx.ALL, 5)
+            self.dataEditSizer.Add(self.inputTxtMinRem, 3, wx.ALL, 5)
+            self.dataEditSizer.Add(self.inputTxtMaxRem, 3, wx.ALL, 5)
+            self.dataEditSizer.Add(self.labelMaxRem, 2, wx.ALL, 5)
+            self.dataEditSizer.Add(self.editLogicToggleBtn,2,wx.ALL,5)
+            self.dataEditSizer.Add(self.removePtsBtn, 3, wx.ALL, 5)
+
             self.chartSizer.Add(self.vizInfoSizer, 1, wx.ALL, 5)
             self.chartSizer.Add(self.editSlider,1, wx.LEFT | wx.RIGHT | wx.EXPAND,94)
             self.chartSizer.Add(self.canvas, 12, wx.EXPAND)
             self.chartSizer.Add(self.toolbar, 1, wx.EXPAND)
+            self.chartSizer.Add(self.dataEditSizer,1,wx.EXPAND)
 
             self.dataVizSizer.Add(self.ctrlSizer,1,wx.EXPAND)
             self.dataVizSizer.Add(self.chartSizer,6,wx.EXPAND)
 
             self.GPSSizer.Add(self.dataEditMsg, 2, wx.ALL, 5)
+            self.GPSSizer.Add(self.reverseBx, 1, wx.ALL, 5)
             self.GPSSizer.Add(self.labelGPSIN, 1, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
             self.GPSSizer.Add(self.inputTxtGPS, 8, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
             self.GPSSizer.Add(self.inputGPSBtn, 1, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
@@ -253,6 +293,7 @@ class ERTAPP(wx.Frame):
             self.bottomSizer.Add(self.TopoSizer,0, wx.ALIGN_RIGHT | wx.ALL, 5)
             self.bottomSizer.Add(self.botSizer,0, wx.ALIGN_RIGHT | wx.ALL, 5)
 
+    #Add sizers to panels
         def addtoPanels(self):
 
             self.topPanel.SetSizer(self.topSizer)
@@ -261,7 +302,8 @@ class ERTAPP(wx.Frame):
             self.bottomPanel.SetSizer(self.bottomSizer)
 
             self.topPanel.Layout()
-
+            
+            #Add panels to main sizer
             self.baseSizer.Add(self.topPanel,1, wx.EXPAND,1)
             self.baseSizer.Add(self.infoPanel,1,wx.EXPAND,1)
             self.baseSizer.Add(self.chartPanel, 10, wx.EXPAND | wx.ALL, 5)
@@ -270,22 +312,29 @@ class ERTAPP(wx.Frame):
             self.SetSizer(self.baseSizer)
             self.SetSize(1100,950)
 
-        def variableInfo():
+    #This section is only for book-keeping; helps define what the "global" variables are
+        def variableInfo(): #To see what the 'global' variables are
             pass
-            #self.xDataIN:  list of all electrode xdistances
             #self.xCols:    list with numbers of columns with x-values, from initial read-in table. varies with datatype
             #self.xData:    list with all x-values of data points
-            #self.yData:    list with all y-values of data points (depth)
+            #self.zData:    list with all z-values of data points (depth)
             #self.values:   list with all resist. values of data points
             #self.inputDataExt: extension of file read in, selected from initial drop-down (default = .dat (LS))
             #self.xDF   :   dataframe with only x-dist of electrodes, and all of them
-            #self.dataframe: initial dataframe from data that is read in
+            #self.dataHeaders: headers from original file read in, used for column names for dataframeIN
+            #self.dataListIN: nested list that will be used to create dataframe, with all read-in data
+            #self.dataframeIN: initial dataframe from data that is read in
             #self.df:       dataframe formatted for editing, but remaining static as initial input data
             #self.dataframeEDIT: dataframe that is manipulated during editing
-            #self.electrodes:sorted list of all electrode distances
+            #self.electrodesIN: unsorted list of all electrode xdistances as read in from original datafile (no shifting)  (without "IN" may be shifted)
+            #self.electrodesUniqueIN: sorted, unique list of all electrode x distances as read in from original datafile (no shifting) (without "IN" may be shifted)
             #self.electState:list of booleans giving status of electrode (True = in use, False = edited out)
             #self.electrodeElevs: surface elevation values at each electrode
+            #self.dataLengthIN: number of measurements in file/length of dataframes
+            #self.dataframeEDITColHeaders
+            #self.dataShifted: indicates whether data has been shifted
 
+    #These next lines run all the set up functions that were defined above ^
         setUpPanels(self)
         titleSetup(self)
         inputSetup(self)
@@ -295,14 +344,14 @@ class ERTAPP(wx.Frame):
         sizersSetup(self)
         addtoSizers(self)
         addtoPanels(self)
-
         #wxli.InspectionTool().Show(self)
 
-#Initial Plot
-
+#Functions that run as user interacts with app
+    #exists as placeholder for 322222when functions are added
     def nullFunction(self,event):
         pass
-
+    
+    #Initial tasks when file is selected (but not yet imported)
     def onBrowse(self,event):
         with wx.FileDialog(self,"Open Data File", style= wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
             if fileDialog.ShowModal() == wx.ID_CANCEL:
@@ -327,6 +376,12 @@ class ERTAPP(wx.Frame):
             else:
                 self.inputDataExt = '.DAT (LS)'
                 n = 0
+        elif self.inputDataExt.lower() == '.vtk':
+            self.inputDataExt = '.VTK'
+            n=3
+        elif self.inputDataExt.lower() == '.xyz':
+            self.inputDataExt = '.XYZ'
+            n=4
         else:
             wx.LogError("Cannot Open File")
 
@@ -336,7 +391,12 @@ class ERTAPP(wx.Frame):
             outPath = self.dataPath.stem.split('.')[0]
             if outPath.startswith('lr'):
                 outPath = outPath[2:]
-        outPath = outPath +'_AdvEdit.dat'
+        
+        #Append file end to output file string
+        if self.inputDataExt == '.VTK' or self.inputDataExt == '.XYZ':
+            outPath = outPath +'_geolocated' + str(self.inputDataExt).lower()
+        else:
+            outPath = outPath +'_pyEdit.dat'
 
         if self.includeTopoBx.GetValue():
             outPath = outPath[:-4]
@@ -348,6 +408,7 @@ class ERTAPP(wx.Frame):
 
         self.readInFileBtn.SetLabelText('Read Data')
 
+    #Initial tasks that run when GPS file is selected (but not yet imported)
     def onGPSBrowse(self,event):
         with wx.FileDialog(self,"Open GPS File", style= wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
             if fileDialog.ShowModal() == wx.ID_CANCEL:
@@ -357,10 +418,12 @@ class ERTAPP(wx.Frame):
             self.inputTxtGPS.SetValue(gpsFName)
         self.getGPSVals()
 
+    #Tasks that run when GPS is imported
     def getGPSVals(self):
         with open(self.GPSpath) as GPSFile:
             data = csv.reader(GPSFile)
 
+            self.gpsxDists = []
             self.gpsXData = []
             self.gpsYData = []
             self.gpsLabels = []
@@ -373,10 +436,14 @@ class ERTAPP(wx.Frame):
                     if row[0] == '':
                         pass
                     else:
+                        self.gpsxDists.append(float(r[1]))
                         self.gpsLabels.append(r[2])
                         self.gpsXData.append(float(r[3]))
                         self.gpsYData.append(float(r[4]))
+            self.GPSDF = pd.DataFrame([self.gpsxDists, self.gpsXData, self.gpsYData, self.gpsLabels]).transpose()
+            self.GPSDF.columns = ['GPS_XDist', 'GPS_X', 'GPS_Y', 'GPS_Labels']
 
+    #Tasks that run when Topo file is selected (but not yet imported)
     def onTopoBrowse(self,event):
         with wx.FileDialog(self,"Open Topo File", style= wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
             if fileDialog.ShowModal() == wx.ID_CANCEL:
@@ -384,14 +451,60 @@ class ERTAPP(wx.Frame):
             self.topoPath = pathlib.Path(fileDialog.GetPath())
             topoFName = str(self.topoPath.parent) + '\\' + self.topoPath.name
             self.inputTxtTopo.SetValue(topoFName)
-        self.getTopoVals()
         self.includeTopoBx.SetValue(True)
+        self.getTopoVals()
+        self.topoText()
 
-        if len(self.inputTxtOne.GetValue())>0:
-            outPath = self.exportTXT.GetValue()[:-4]
-            outPath = outPath + "_topo.dat"
-            self.exportTXT.SetValue(outPath)
+    #Event function that ties to next function
+    def onIncludeTopo(self,event):
+        self.topoText()
 
+    #Function that looks at output text and appends "_topo" to output filename automatically if needed
+    def topoText(self):
+        if self.includeTopoBx.GetValue() == True:
+            #print('topo' not in self.exportTXT.GetValue())
+            if 'topo' not in self.exportTXT.GetValue():
+                #print("It's Not in")
+                if len(self.exportTXT.GetValue())>0:
+                    outPath = self.exportTXT.GetValue()
+                    outPath = outPath[:int(len(outPath)-4)]
+                    outPath = outPath + "_topo.dat"
+                    self.exportTXT.SetValue(outPath)
+        elif self.includeTopoBx.GetValue() == False:
+
+            if '_topo' in self.exportTXT.GetValue():
+                outPath = self.exportTXT.GetValue()
+                #print(outPath)
+                strInd = int(outPath.find("_topo"))
+                strInd2 = strInd + 5
+                outPath = outPath[:strInd]+outPath[strInd2:]
+                self.exportTXT.SetValue(outPath)
+
+    #Event function that captures event and runs another, simpler function
+    def onReverse(self,event):
+        self.reverseText()
+
+    #Function that looks at output text and appends "_rev" to output filename automatically if needed
+    def reverseText(self):
+        if self.reverseBx.GetValue() == True:
+            if '_rev' not in self.exportTXT.GetValue():
+
+                if len(self.exportTXT.GetValue())>0:
+                    outPath = self.exportTXT.GetValue()
+                    outPath = outPath[:int(len(outPath)-4)]
+                    outPath = outPath + "_rev.dat"
+                    self.exportTXT.SetValue(outPath)
+        elif self.reverseBx.GetValue() == False:
+
+            if '_rev' in self.exportTXT.GetValue():
+                outPath = self.exportTXT.GetValue()
+                #print(outPath)
+                strInd = int(outPath.find("_rev"))
+                strInd2 = strInd + 4
+                outPath = outPath[:strInd]+outPath[strInd2:]
+                self.exportTXT.SetValue(outPath)
+
+    #Function that pulls topo values out of topo file
     def getTopoVals(self):
         with open(self.topoPath) as topoFile:
             data = csv.reader(topoFile)
@@ -414,6 +527,7 @@ class ERTAPP(wx.Frame):
         self.topoDF = pd.DataFrame([topoXData, topoYData]).transpose()
         self.topoDF.columns = ["xDist", "Elev"]
 
+    #function that sets up parameters based on what data type is selected for input data file
     def onDataType(self,event):
 
         self.inputDataExt = self.inputDataType.GetString(self.inputDataType.GetSelection())
@@ -422,6 +536,10 @@ class ERTAPP(wx.Frame):
             self.headerlines = 8
         elif self.inputDataExt == '.DAT (SAS)':
             self.headerlines = 5
+        elif self.inputDataExt == '.VTK':
+            self.headerlines = 5 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        elif self.inputDataExt == '.XYZ':
+            self.header = 5 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         elif self.inputDataExt =='':
             self.headerlines = 8
         else:
@@ -446,49 +564,52 @@ class ERTAPP(wx.Frame):
             else:
                 self.headerlines = -1
 
+    #Tasks that run upon user clicking "Read Data" Button
     def onReadIn(self, event):
         self.onDataType(self) #initialize number of headerlines to use
-        self.dataHeader = []
+        self.dataHeaders = []
 
         filepath = pathlib.Path(self.inputTxtOne.GetValue())
-        self.ext = str(filepath.suffix)
+        #self.inputDataExt = str(filepath.suffix)
         filename = str(filepath.stem)
-
-        if self.ext.lower() == '.dat':
-            dataLst = []
+        self.dataframeEDITColHeaders = ['MeasID','A(x)','A(z)','B(x)','B(z)','M(x)','M(z)','N(x)','N(z)', 'aVal', 'nFac','PseudoX','PseudoZ','Resistance','AppResist','Cycles','Variance','DataLevel','DtLvlMean','PctErr','Keep']
+        if self.inputDataExt.lower()[:4] == '.dat':
+            dataList = []
             self.dataLead = []
             self.dataTail = []
             with open(filepath) as dataFile:
                 data = csv.reader(dataFile)
 
                 if self.inputDataExt == '.DAT (SAS)':
-                    self.dataHeaders = ['x-Dist', 'A-space', 'N-factor', 'Value']
+                    self.dataHeaders = ['M(x)','aVal','nFac','AppResist']
 
                     i = 0
                     dataList=[]
                     for row in enumerate(data):
-                        if row[0]>self.headerlines:
-
-                            if row[0] > self.headerlines + datalength:
+                        if row[0]>self.headerlines: #Read in actual data
+                            if row[0] > self.headerlines + datalength: #Read in data tail
                                 self.dataTail.append(row[1])
                             else:
+                                #It sometimes reads the lines differently. Sometimes as a list (as it should) other times as a long string
                                 if len(row[1]) < 4:
+                                    #Entire row is read as string
                                     dataList.append(re.split(' +', row[1][0]))
                                 else:
+                                    #Row is read correctly as separate columns
                                     dataList.append(row[1])
                                 i+=1
 
                         else:
-                            if row[0] == 3:
+                            if row[0] == 3: #Read in data length
                                 datalength = float(row[1][0])
-                            self.dataLead.append(row[1])
+
+                            self.dataLead.append(row[1])#Create data lead variable for later use
 
                     datalengthIN = i
                     self.fileHeaderDict = {}
-                    self.dataListIN = dataList
+                    self.dataListIN = dataList #Formatted global nested list is created of data read in
 
                     project = self.dataLead[0][0]
-
                     array = self.dataLead[2][0]
 
                     if float(array) == 3:
@@ -502,8 +623,102 @@ class ERTAPP(wx.Frame):
                     self.fileHeaderDict["Type of Measurement"] = msrmtType
                     self.fileHeaderDict['DataPts'] = self.dataLead[3][0]
 
-                else:
-                    self.dataHeaders = ["NoElectrodes",'A_x', 'A_z', 'B_x', 'B_z', 'M_x', 'M_z', 'N_x', 'N_z', 'Value']
+                    self.dataframeIN = pd.DataFrame(self.dataListIN)
+
+                    #Sometimes the data is read in with an extra column at the beginning. This fixes that.
+                    if len(self.dataframeIN.columns) > 4:
+                        del self.dataframeIN[0]
+                        self.dataframeIN.reindex([0, 1, 2, 3], axis='columns')
+                    self.dataframeIN = self.dataframeIN.astype(float)
+
+                    self.dataframeIN.columns = self.dataHeaders
+
+                    self.dataframeCols = [-2, -3, -4, -5, -6, 0, -7, -8, -9, 1, 2, -10, -11, -12, 3, -1, -1, -13, -14, -15,-16]  # neg val ind. colums that need to be calculated
+                    self.dataframeEDIT = pd.DataFrame()
+                    dataframelength = len(self.dataframeIN.index)
+                    nullList = []
+                    keepList = []
+                    zeroList = []
+                    for i in range(0, dataframelength):
+                        nullList.append(-1)
+                        zeroList.append(0.0)
+                        keepList.append(True)
+
+                    # Create dataframe that will be used in editing process (self.dataframeEDIT) one column at a time
+                    for item in enumerate(self.dataframeEDITColHeaders):
+                        if self.dataframeCols[
+                            item[0]] > -1:  # Columns from dataframeIN that are directly read to dataframeEDIT
+                            self.dataframeEDIT[item[1]] = self.dataframeIN.iloc[:, self.dataframeCols[item[0]]]
+                            self.dataframeEDIT[item[1]] = self.dataframeEDIT[item[1]].astype(float)
+                        elif self.dataframeCols[item[0]] == -1:  # Null list (can't calculate)
+                            self.dataframeEDIT[item[1]] = nullList
+                        elif self.dataframeCols[item[0]] == -2:  # Measure ID
+                            for i in range(0, dataframelength):
+                                self.dataframeEDIT.loc[i, item[1]] = i
+                        elif self.dataframeCols[item[0]] == -3:  # A(x)
+                            self.dataframeIN['A(x)'] = self.dataframeIN['M(x)'] + self.dataframeIN['aVal'] + (self.dataframeIN['aVal']*self.dataframeIN['nFac']) + self.dataframeIN['aVal']
+                            self.dataframeEDIT['A(x)'] = self.dataframeIN['A(x)']
+                        elif self.dataframeCols[item[0]] == -4:  # A(z)
+                            self.dataframeEDIT[item[1]] = zeroList
+                        elif self.dataframeCols[item[0]] == -5:  # B(x)
+                            self.dataframeIN['B(x)'] = self.dataframeIN['M(x)'] + self.dataframeIN['aVal'] + (self.dataframeIN['aVal']*self.dataframeIN['nFac'])
+                            self.dataframeEDIT['B(x)'] = self.dataframeIN['B(x)']
+                        elif self.dataframeCols[item[0]] == -6:  # B(z)
+                            self.dataframeEDIT[item[1]] = zeroList
+                        #elif self.dataframeCols[item[0]] == -6:  # M(x)
+                            #Reads in directly
+                        elif self.dataframeCols[item[0]] == -7:  # M(z)
+                            self.dataframeEDIT[item[1]] = zeroList
+                        elif self.dataframeCols[item[0]] == -8:  #N(x)
+                            self.dataframeIN['N(x)'] = self.dataframeIN['M(x)'] + self.dataframeIN['aVal']
+                            self.dataframeEDIT['N(x)'] = self.dataframeIN['N(x)']
+                        elif self.dataframeCols[item[0]] == -9:  # N(z)
+                            self.dataframeEDIT[item[1]] = zeroList
+                        elif self.dataframeCols[item[0]] == -10:  # PseudoX
+                            self.dataframeEDIT['PseudoX'] = (((self.dataframeEDIT['A(x)'] + self.dataframeEDIT[
+                                'B(x)']) / 2) + ((self.dataframeEDIT['M(x)'] + self.dataframeEDIT['N(x)']) / 2)) / 2
+                        elif self.dataframeCols[item[0]] == -11:  # PseudoZ
+                            n = self.dataframeEDIT['nFac']
+                            a = self.dataframeEDIT['aVal']
+
+                            self.dataframeEDIT['PseudoZ'] = round((((n ** 2) * -0.0018) + 0.2752 * n + 0.1483) * a, 1)
+                        elif self.dataframeCols[item[0]] == -12:  #Resistance
+                            PI = math.pi
+                            n = self.dataframeEDIT['nFac']
+                            a = self.dataframeEDIT['aVal']
+                            appR = self.dataframeIN['AppResist']
+
+                            if self.fileHeaderDict['Array'] == 'Dipole-Dipole':
+                                self.dataframeEDIT['Resistance'] = appR/(PI * n * (n + 1) * (n + 2) * a)
+                            else:
+                                print('Array is not Dipole-Dipole, but Dipole-Dipole k-factor used to calculate App. Resistivity')
+                        elif self.dataframeCols[item[0]] == -13:  #DataLevel
+                            self.dataframeEDIT['DataLevel'] = nullList
+                            uniqueDepths = self.dataframeEDIT['PseudoZ'].unique()
+                            uniqueDepths = list(set(uniqueDepths.flatten()))
+                            self.dataLevels = len(uniqueDepths)
+                            dataLength = len(self.dataframeEDIT['PseudoZ'])
+                            for i in range(0, dataLength):
+                                self.dataframeEDIT.loc[i, 'DataLevel'] = uniqueDepths.index(
+                                    self.dataframeEDIT.loc[i, 'PseudoZ'])
+                        elif self.dataframeCols[item[0]] == -14:  #DtLvlMean
+                            for i in uniqueDepths:
+                                df = self.dataframeEDIT[self.dataframeEDIT.iloc[:, 12] == i]
+                                dtLvlMean = df['AppResist'].mean()
+                                indexList = df.index.values.tolist()
+                                for ind in indexList:
+                                    self.dataframeEDIT.loc[ind, 'DtLvlMean'] = dtLvlMean
+                        elif self.dataframeCols[item[0]] == -15:  #PctErr
+                            self.dataframeEDIT['PctErr'] = (abs(
+                                self.dataframeEDIT['DtLvlMean'] - self.dataframeEDIT['AppResist'])) / \
+                                                           self.dataframeEDIT['DtLvlMean']
+                        elif self.dataframeCols[item[0]] == -16:  #Keep
+                            self.dataframeEDIT[item[1]] = keepList
+                        else:
+                                self.dataframeEDIT[item[1]] = nullList
+
+                elif self.inputDataExt == '.DAT (LS)': # If it's .DAT (LS)
+                    self.dataHeaders = ["NoElectrodes",'A(x)', 'A(z)', 'B(x)', 'B(z)', 'M(x)', 'M(z)', 'N(x)', 'N(z)', 'Resistance']
                     datalength=12
                     dataList = []
                     for row in enumerate(data):
@@ -544,7 +759,10 @@ class ERTAPP(wx.Frame):
 
                     project = self.dataLead[0]
                     dataFrmt = self.dataLead[2]
-                    array = int(self.dataLead[3])
+                    if hasattr(self.dataLead[3], '__iter__'):
+                        array = int(self.dataLead[3].split("\\t")[0])
+                    else:
+                        array = int(self.dataLead[3])
                     if array == 3:
                         array = "Dipole-Dipole"
 
@@ -556,33 +774,97 @@ class ERTAPP(wx.Frame):
 
                     self.fileHeaderDict['Filename'] = filename
                     self.fileHeaderDict['Project'] = project
-                    self.fileHeaderDict['minElectSpcng'] = str(round(float(self.dataLead[1]),2))
+                    
+                    if hasattr(self.dataLead[3], '__iter__'):
+                        self.fileHeaderDict['minElectSpcng'] = str(round(float(self.dataLead[1].split("\\t")[0]),2))
+                    else:
+                        self.fileHeaderDict['minElectSpcng'] = str(round(float(self.dataLead[1]),2))
                     self.fileHeaderDict['Array'] = array
                     self.fileHeaderDict["Type of Measurement"] = msrmtType
                     self.fileHeaderDict['DataPts'] = str(self.dataLead[6])
                     self.fileHeaderDict['DistType'] = str(self.dataLead[7])
 
-            self.dataframe = pd.DataFrame(self.dataListIN)
+                    self.dataframeIN = pd.DataFrame(self.dataListIN)
+                    self.dataframeIN.columns = self.dataHeaders
 
-            if self.inputDataExt == '.DAT (SAS)':
-                if len(self.dataframe.columns) > 4:
-                    del self.dataframe[0]
-                    self.dataframe.reindex([0,1,2,3], axis='columns')
-                self.dataframe = self.dataframe.astype(float)
+                    self.dataframeCols = [-2, 1, 2, 3, 4, 5, 6, 7, 8, -3, -4, -5, -6, 9, -7, -1, -1, -8, -9, -10, -11]  # neg val ind. colums that need to be calculated
+                    self.dataframeEDIT = pd.DataFrame()
+                    dataframelength = len(self.dataframeIN.index)
+                    nullList = []
+                    keepList = []
+                    for i in range(0, dataframelength):
+                        nullList.append(-1)
+                        keepList.append(True)
 
-            self.dataframe.columns = self.dataHeaders
+                    # Create dataframe that will be used in editing process (self.dataframeEDIT) one column at a time
+                    for item in enumerate(self.dataframeEDITColHeaders):
+                        if self.dataframeCols[item[0]] > -1: #Columns from dataframeIN that are directly read to dataframeEDIT
+                            self.dataframeEDIT[item[1]] = self.dataframeIN.iloc[:, self.dataframeCols[item[0]]]
+                            self.dataframeEDIT[item[1]] = self.dataframeEDIT[item[1]].astype(float)
+                        elif self.dataframeCols[item[0]] == -1: #Null list (can't calculate)
+                            self.dataframeEDIT[item[1]] = nullList
+                        elif self.dataframeCols[item[0]] == -2:#Measure ID
+                            for i in range(0,dataframelength):
+                                self.dataframeEDIT.loc[i,item[1]] = i
+                        elif self.dataframeCols[item[0]] == -3: #A spacing
+                            self.dataframeEDIT[item[1]] = abs(self.dataframeEDIT['A(x)'] - self.dataframeEDIT['B(x)'])
+                        elif self.dataframeCols[item[0]] == -4: #N-factor
+                            self.dataframeEDIT[item[1]] = abs(self.dataframeEDIT['B(x)'] - self.dataframeEDIT['N(x)']) / self.dataframeEDIT['aVal']
+                        elif self.dataframeCols[item[0]] == -5:#PseduoX
+                            self.dataframeEDIT['PseudoX'] = (((self.dataframeEDIT['A(x)']+self.dataframeEDIT['B(x)'])/2)+((self.dataframeEDIT['M(x)']+self.dataframeEDIT['N(x)'])/2))/2
+                        elif self.dataframeCols[item[0]] == -6: #PseduoZ
+                            n = self.dataframeEDIT['nFac']
+                            a = self.dataframeEDIT['aVal']
+                            self.dataframeEDIT['PseudoZ'] = round((((n**2)*-0.0018)+0.2752*n+0.1483)*a,1)
+                        elif self.dataframeCols[item[0]] == -7:#AppResistivity
+                            PI = math.pi
+                            n = self.dataframeEDIT['nFac']
+                            a = self.dataframeEDIT['aVal']
+                            R = self.dataframeEDIT['Resistance']
+
+                            if self.fileHeaderDict['Array'] == 'Dipole-Dipole':
+                                self.dataframeEDIT['AppResist'] = PI*n*(n+1)*(n+2)*a*R
+                            else:
+                                print('Array is not Dipole-Dipole, but Dipole-Dipole k-factor used to calculate App. Resistivity')
+
+                        elif self.dataframeCols[item[0]] == -8:  #DataLevel
+                            self.dataframeEDIT['DataLevel'] = nullList
+                            uniqueDepths = self.dataframeEDIT['PseudoZ'].unique()
+                            uniqueDepths = list(set(uniqueDepths.flatten()))
+                            self.dataLevels = len(uniqueDepths)
+                            dataLength = len(self.dataframeEDIT['PseudoZ'])
+                            for i in range(0, dataLength):
+                                self.dataframeEDIT.loc[i, 'DataLevel'] = uniqueDepths.index(self.dataframeEDIT.loc[i, 'PseudoZ'])
+                        elif self.dataframeCols[item[0]] == -9:  # DtLvlMean
+                            for i in uniqueDepths:
+                                df = self.dataframeEDIT[self.dataframeEDIT.iloc[:, 12] == i]
+                                dtLvlMean = df['AppResist'].mean()
+                                indexList = df.index.values.tolist()
+                                for ind in indexList:
+                                    self.dataframeEDIT.loc[ind, 'DtLvlMean'] = dtLvlMean
+                        elif self.dataframeCols[item[0]] == -10:  #PctErr
+                            self.dataframeEDIT['PctErr'] = (abs(
+                                self.dataframeEDIT['DtLvlMean'] - self.dataframeEDIT['AppResist'])) / \
+                                                           self.dataframeEDIT['DtLvlMean']
+                        elif self.dataframeCols[item[0]] == -11:  #Keep
+                            self.dataframeEDIT[item[1]] = keepList
+                        else:
+                            self.dataframeEDIT[item[1]] = nullList
 
             self.readInFileBtn.SetLabelText("Reset Data")
 
-        elif self.ext.lower() == '.txt':
+        elif self.inputDataExt.lower() == '.txt (ls)':
+
             with open(filepath, 'r') as datafile:
                 filereader = csv.reader(datafile)
                 start = 0
                 end = 0
                 fileHeader = []
                 data = []
+
                 for row in enumerate(filereader):
                     if start == 0:
+
                         if row[0] <= 13:
                             fileHeader.append(row[1])
                             fileHeader[row[0]] = fileHeader[row[0]][:]
@@ -593,12 +875,11 @@ class ERTAPP(wx.Frame):
                             dataHdrTemp = str(row[1])
                             self.dataHeaders = dataHdrTemp[2:-2].split('\\t')
                             self.dataHeaders[1] = dataHdrTemp[1].strip()
-
                             self.fileHeaderDict = {}
+
                             for item in fileHeader:
                                 if len(item) > 0:
-                                    self.fileHeaderDict[str(item[0]).split(":", 1)[0]] = str(item[0]).split(":", 1)[
-                                        1].strip()
+                                    self.fileHeaderDict[str(item[0]).split(":", 1)[0]] = str(item[0]).split(":", 1)[1].strip()
 
                     elif start == 1 and end == 0:
                         if len(row[1]) > 0:
@@ -609,7 +890,46 @@ class ERTAPP(wx.Frame):
                         continue
 
             self.dataListIN = data
-            self.dataframe = pd.DataFrame(self.dataListIN)
+            self.dataframeIN = pd.DataFrame(self.dataListIN)
+            self.dataframeCols = [0, 6, 8, 9, 11, 12, 14, 15, 17, -2, -3, 18, 20, 26, 28, 29, 27, -4, -5, -6, -7] #neg val ind. colums that need to be calculated
+            self.dataframeEDIT = pd.DataFrame()
+            dataframelength = len(self.dataframeIN.index)
+            nullList = []
+            keepList = []
+            for i in range(0, dataframelength):
+                nullList.append(-1)
+                keepList.append(True)
+
+            # Create dataframe that will be used in editing process (self.dataframeEDIT) one column at a time
+            for item in enumerate(self.dataframeEDITColHeaders):
+                if self.dataframeCols[item[0]] > -1:
+                    self.dataframeEDIT[item[1]] = self.dataframeIN.iloc[:, self.dataframeCols[item[0]]]
+                    self.dataframeEDIT[item[1]] = self.dataframeEDIT[item[1]].astype(float)
+                elif self.dataframeCols[item[0]] == -2:
+                    self.dataframeEDIT[item[1]] = abs(self.dataframeEDIT['A(x)'] - self.dataframeEDIT['B(x)'])
+                elif self.dataframeCols[item[0]] == -3:
+                    self.dataframeEDIT[item[1]] = abs(self.dataframeEDIT['N(x)'] - self.dataframeEDIT['M(x)']) / self.dataframeEDIT['aVal']
+                elif self.dataframeCols[item[0]] == -4:
+                    self.dataframeEDIT['DataLevel'] = nullList
+                    uniqueDepths = self.dataframeEDIT['PseudoZ'].unique()
+                    uniqueDepths = list(set(uniqueDepths.flatten()))
+                    self.dataLevels = len(uniqueDepths)
+                    dataLength = len(self.dataframeEDIT['PseudoZ'])
+                    for i in range(0, dataLength):
+                        self.dataframeEDIT.loc[i, 'DataLevel'] = uniqueDepths.index(self.dataframeEDIT.loc[i, 'PseudoZ'])
+                elif self.dataframeCols[item[0]] == -5:
+                    for i in uniqueDepths:
+                        df = self.dataframeEDIT[self.dataframeEDIT.iloc[:, 12] == i]
+                        dtLvlMean = df['AppResist'].median()
+                        indexList = df.index.values.tolist()
+                        for ind in indexList:
+                            self.dataframeEDIT.loc[ind, 'DtLvlMean'] = dtLvlMean
+                elif self.dataframeCols[item[0]] == -6:
+                    self.dataframeEDIT['PctErr'] = abs(self.dataframeEDIT['DtLvlMean'] - self.dataframeEDIT['AppResist']) / self.dataframeEDIT['DtLvlMean']
+                elif self.dataframeCols[item[0]] == -7:
+                    self.dataframeEDIT[item[1]] = keepList
+                else:
+                    self.dataframeEDIT[item[1]] = nullList
 
             self.dataHeaders[1] = 'MeasTime'
             if len(self.dataHeaders) > 37:
@@ -617,7 +937,7 @@ class ERTAPP(wx.Frame):
 
             self.dataTail = [0,0,0,0,0,0,0]
 
-            self.dataframe.columns = self.dataHeaders
+            self.dataframeIN.columns = self.dataHeaders
 
             self.readInFileBtn.SetLabelText("Reset Data")
 
@@ -625,7 +945,7 @@ class ERTAPP(wx.Frame):
             self.fileHeaderDict['Project'] = self.fileHeaderDict['Project name']
             self.fileHeaderDict['Array'] = self.fileHeaderDict['Protocol file'][21:-4]
             self.fileHeaderDict['minElectSpcng'] = self.fileHeaderDict['Smallest electrode spacing']
-            self.fileHeaderDict['DataPts'] = len(self.dataframe)
+            self.fileHeaderDict['DataPts'] = len(self.dataframeIN)
 
             self.dataLead = []
             self.dataLead.append(self.fileHeaderDict['Project name'] + "  " + self.fileHeaderDict['Filename'])
@@ -638,17 +958,147 @@ class ERTAPP(wx.Frame):
             self.dataLead.append('2')
             self.dataLead.append('0')
 
+        elif self.inputDataExt.lower() == '.vtk':
+            with open(filepath, 'r') as datafile:
+                filereader = csv.reader(datafile)
+                startLocs = 0
+                startData = 0
+                startLocInd = 'POINTS'
+                startDataInd = 'LOOKUP_TABLE'
+                endLocs = 0
+                endData = 0
+                endLocInd = []
+                endDataInd = []
+                self.fileLead = []
+                self.fileMid = []
+                self.fileTail = []
+                self.vtkDataIN = []
+                self.vtklocsIN = []
+                newrow = []
+                xLocPts = []
+                yLocPts = []
+                zLocPts = []
+                vPts = []
+
+                for row in enumerate(filereader):
+                    if startLocs == 0:
+                        self.fileLead.append(row[1])
+                        self.fileLead[row[0]] = self.fileLead[row[0]][:]
+                        if startLocInd in str(row[1]):
+                            startLocs = 1
+                    elif startLocs == 1 and endLocs == 0:
+                        if endLocInd == row[1]:
+                            endLocs = 1
+                        else:
+                            newrow = re.split(' +', str(row[1][0]))
+                            newrow = newrow[1:]
+                            self.vtklocsIN.append(newrow)
+                    elif startData == 0:
+                        self.fileMid.append(row[1])
+                        if startDataInd in str(row[1]):
+                            startData = 1
+                    elif startData == 1 and endData == 0:
+                        if row[1] == endDataInd:
+                            endData == 1
+                        else:
+                            newrow = re.split(' +', str(row[1][0]))
+                            newrow = newrow[1:]
+                            self.vtkDataIN.append(newrow)
+                    else:
+                        self.fileTail.append(row[1])
+                        self.fileTail[row[0]] = self.fileTail[row[0]][:]
+
+            xPtCols = [0,3,6,9]
+            yPtCols = [1,4,7,10]
+            zPtCols = [2,5,8,11]
+            for r in self.vtklocsIN:
+                Xs = 0.0
+                for x in xPtCols:
+                    Xs = Xs + float(r[x])
+                xLocPts.append(Xs/4.0)
+
+                Ys = 0.0
+                for y in yPtCols:
+                    Ys = Ys + float(r[y])
+                yLocPts.append(Ys/4.0)
+
+                Zs = 0.0
+                for z in zPtCols:
+                    Zs = Zs + float(r[z])
+                zLocPts.append(Zs/4)
+
+            for d in self.vtkDataIN:
+                for i in d:
+                    vPts.append(i)
+
+            self.dataframeIN = pd.DataFrame([xLocPts, yLocPts, zLocPts, vPts]).transpose()
+            self.dataframeIN.columns = ['X','Y','Z','Resistivity']
+            self.dataframeEDIT = self.dataframeIN.copy()
+            self.dataframeEDIT.insert(len(self.dataframeEDIT.columns),'Keep', True)
+            self.dataframeEDIT.insert(len(self.dataframeEDIT.columns),'PctErr', 0)
+            self.dataframeEDIT.insert(len(self.dataframeEDIT.columns),'PseudoX', self.dataframeEDIT['X'])
+            self.dataframeEDIT.insert(len(self.dataframeEDIT.columns),'PseudoZ', self.dataframeEDIT['Z'])
+            self.dataframeEDIT.insert(len(self.dataframeEDIT.columns),'AppResist', self.dataframeEDIT['Resistivity'])
+            #Format vtk file
+
+            self.fileHeaderDict = {}
+            self.fileHeaderDict['Filename'] = filename
+            self.fileHeaderDict['Project'] = 'NA'
+            self.fileHeaderDict['Array'] = 'NA'
+            self.fileHeaderDict['minElectSpcng'] = str(round(self.dataframeIN.loc[1,'X'] - self.dataframeIN.loc[0,'X'],1))
+            self.fileHeaderDict['DataPts'] = len(self.dataframeIN)
+
+        elif self.inputDataExt.lower() == '.xyz':#!!!!!!!!!!!!!!!!
+            with open(filepath, 'r') as datafile:
+                filereader = csv.reader(datafile)
+                start = 0
+                startIndicator = 'Elevation'
+                end = 0
+                endIndicator = '/'
+                fileHeader = []
+                data = []
+
+
+                for row in enumerate(filereader):
+                    if start == 0:
+                        fileHeader.append(row[1])
+                        fileHeader[row[0]] = fileHeader[row[0]][:]
+                        if startIndicator in str(row[1]):
+                            start = 1
+                    elif start == 1 and end == 0:
+                        if endIndicator in str(row[1]):
+                            end = 1
+                        else:
+                            data.append(str(row[1])[2:-1].split('\\t'))
+                    else:
+                        continue
+
+            ######format xyz input
+
         else:
-            self.datVizMsg2.SetLabelText("Filepath Error. Must be .DAT or .TXT file")
+            self.datVizMsg2.SetLabelText("Filepath Error. Must be .DAT, .TXT, .VTK, or .XYZ file")
 
-        self.dataLengthIN = len(self.dataframe.iloc[:,0])
+        self.dataLengthIN = len(self.dataframeIN.iloc[:,0])
+        #Create Keep Dataframe to maintain keep/remove information over multiple steps
+        dfArray = np.ones_like(self.dataframeEDIT,dtype=bool) #First create an array same size as dataframeEDIT
+        if np.shape(dfArray)[1] < 11:
+            newcol = np.ones_like(dfArray[:,0:1],dtype=bool)
+            for item in enumerate(dfArray):
+                while np.shape(dfArray)[1] < 11:
+                    dfArray = np.append(dfArray, newcol,axis=1)
+        dfArray = dfArray[:,0:11] #Cut down the number of columns to how many we will use for editing purposes (most possible in .txt file input)
+        self.keepDF = pd.DataFrame(dfArray) #Create Keep dataframe
+        keepDFCols = ['OR', 'AND', 'GraphChart', 'StatChart','AppResist','Resistance','Electrode x-Dists', 'Variance','PctErr','PseudoX','PseudoZ']
+        self.keepDF.columns = keepDFCols #Add column names to make dataframe easier to manipulate
 
+        #Set whether data has been read in, then run other functions
         self.read = 0
-        self.generateXY()
-        self.generateProfileInfo()
-        self.graphChart()
-        self.read = 1
+        self.generateXY() #this function generates XYZ data from input data
+        self.generateProfileInfo() #This generates the "metadata" from the input file
+        self.graphChart() #This charts the data on the graphchart setting as an initial overview
+        self.read = 1 #Indicates data has now been read in if above functions all completed succesfully
 
+    #Tasks that run after onReadIn (and elsewhere) that generates standardized XY data no matter the input filetype
     def generateXY(self):
         self.xCols = []
         aVals = []
@@ -656,261 +1106,144 @@ class ERTAPP(wx.Frame):
         yCols = []
         valCols = []
 
+        self.electrodesIN = []
+        self.electrodes = []
+
         self.xData = []
         self.yData = []
+        self.zData = []
         self.values = []
 
-        if self.inputDataExt == '.DAT (SAS)':
-            self.xCols = [0]
-            self.electrodeCols = []
-            aVals = 1
-            nFacs = 2
-            yCols = -1
-            valCols = 3
 
-            if self.autoShiftBx.GetValue():
-                startPt = float(self.dataframe.iloc[:,self.xCols[0]].min())
-                if startPt != 0:
-                    for i in enumerate(self.dataframe.iloc[:,self.xCols[0]]):
-                        self.dataframe.iloc[i[0],self.xCols[0]] = float(i[1]) - float(startPt)
-
-                    if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
-                        outPath = self.dataPath.stem.split('-')[0]
-                    else:
-                        outPath = self.dataPath.stem.split('.')[0]
-                        if outPath.startswith('lr'):
-                            outPath = outPath[2:]
-                    outPath = outPath + '_shift_AdvEdit.dat'
-                    self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
-
-            if self.includeTopoBx.GetValue():
-                outPath = self.exportTXT.GetValue()[:-4]
-                outPath = outPath + "_topo.dat"
-                self.exportTXT.SetValue(outPath)
-
-            self.xDataIN = self.dataframe.iloc[:,self.xCols[0]]
-            self.xDataIN = self.xDataIN.to_list()
-            for x in enumerate(self.xDataIN):
-                self.xDataIN[x[0]] = round(float(x[1]),0)
-            #print("XDATA IN:")
-            #print(self.xDataIN)
-
-            a = []
-            aValList = self.dataframe.iloc[:,aVals].to_list()
-            for item in aValList:
-                a.append(float(item))
-            #print('a')
-            #print(len(a))
-            #print(a)
-
-            n = []
-            nFac = self.dataframe.iloc[:,nFacs]
-            nFacList = nFac.to_list()
-            for item in nFacList:
-                n.append(float(item))
-
-            i = 0
-            for item in self.xDataIN:
-                self.xData.append(float(item)+a[i]+(a[i]*n[i])/2)
-                i += 1
-
-            valList = self.dataframe.iloc[:, valCols]
-            valList = valList.to_list()
-            for item in valList:
-                self.values.append(float(item))
-
-            i = 0
-            for item in n:
-                self.yData.append(round((((item**2)*-0.0018)+0.2752*item+0.1483)*a[i],1))
-                i+=1
-
-            cols = ['N', 'M', 'B', 'A']
-
-            listlist = []
-            for i in range(0,len(self.xDataIN)):
-                a1 = self.xDataIN[i]
-                b1 =self.xDataIN[i]+a[i]
-                m1 = self.xDataIN[i]+a[i]+(a[i]*n[i])
-                n1 = self.xDataIN[i]+a[i]+(a[i]*n[i])+a[i]
-                self.xDataIN.append(b1)
-                self.xDataIN.append(m1)
-                self.xDataIN.append(n1)
-                newrow = [round(a1,0), round(b1,0),round(m1,0),round(n1,0)]
-                listlist.append(newrow)
-            self.xDF = pd.DataFrame(listlist)
-            self.xDF.columns = cols
-            #print(self.xDF)
-
-            minvals = self.xDF.min()
-            #print(minvals)
-            self.minXDist = minvals.min()
-            maxvals = self.xDF.max()
-            self.maxXDist = maxvals.max()
-
-        elif self.inputDataExt =='.TXT (LS)':
-            self.xCols = [18]
-            self.electrodeCols = [6,9,12,15]
-            aVals = -1
-            nFacs = -1
-            yCols = 20
-            valCols = 28 #resistance; 28 is app. resistivity
-
-            if self.autoShiftBx.GetValue():
-                startPt = []
-                for c in self.electrodeCols:
-                    startPt.append(float(self.dataframe.iloc[:,c].min()))
-                startPt = min(startPt)
-
-                if startPt != 0:
-                    for c in self.electrodeCols:
-                        for i in enumerate(self.dataframe.iloc[:,c]):
-                            self.dataframe.iloc[i[0],c] = float(i[1]) - float(startPt)
-
-                    if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
-                        outPath = self.dataPath.stem.split('-')[0]
-                    else:
-                        outPath = self.dataPath.stem.split('.')[0]
-                        if outPath.startswith('lr'):
-                            outPath = outPath[2:]
-                    outPath = outPath + '_shift_AdvEdit.dat'
-                    self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
-
-            if self.includeTopoBx.GetValue():
-                outPath = self.exportTXT.GetValue()[:-4]
-                print(outPath)
-                outPath = outPath + "_topo.dat"
-                self.exportTXT.SetValue(outPath)
-
-            self.xDataIN = []
+        if self.inputDataExt == '.DAT (SAS)' or self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
+            self.xCols = [11]
+            self.electrodeCols = [1,3,5,7]
+            aVals = 9
+            nFacs = 10
+            zCols = 12
+            valCols = 14 #13 is resistance; 14 is app. resistivity
+            
+            #Get all electrode xDistances (direct from file)
             for c in self.electrodeCols:
-                for row in self.dataframe.iloc[:,c]:
-                    self.xDataIN.append(round(float(row),0))
+                for row in self.dataframeEDIT.iloc[:,c]:
+                    self.electrodesIN.append(round(float(row),0))
 
-            xDataIN = self.dataframe.iloc[:,self.xCols[0]].to_list()
+            #Get Unique electrode xDistances  (direct from file)
+            self.electrodesUniqueIN = list(np.unique(self.electrodesIN))
+
+            if self.autoShiftBx.GetValue():
+                self.startPt = []
+                for c in self.electrodeCols:
+                    self.startPt.append(float(self.dataframeEDIT.iloc[:,c].min()))
+                self.startPt = min(self.startPt)
+
+                if self.startPt != 0:
+                    self.dataShifted = True
+                    for i in enumerate(self.dataframeEDIT.iloc[:,11]):#11 for PseudoX
+                        self.dataframeEDIT.iloc[i[0],11] = float(i[1]) - float(self.startPt)
+                        for c in self.electrodeCols:
+                            self.dataframeEDIT.iloc[i[0],c] = float(self.dataframeEDIT.iloc[i[0],c]) - float(self.startPt)
+
+                    if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
+                        outPath = self.dataPath.stem.split('-')[0]
+                    elif self.inputDataExt == '.DAT (SAS)':
+                        outPath = self.dataPath.stem.split('.')[0]
+                        if outPath.startswith('lr'):
+                            outPath = outPath[2:]
+                    outPath = outPath + '_shift_pyEdit.dat'
+                    self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
+                else:
+                    self.dataShifted = False
+            else:
+                self.dataShifted = False
+
+            if self.includeTopoBx.GetValue():
+                outPath = self.exportTXT.GetValue()[:-4]
+                outPath = outPath + "_topo.dat"
+                self.exportTXT.SetValue(outPath)
+
+            #Get all electrode xDistances
+            for c in self.electrodeCols:
+                for row in self.dataframeEDIT.iloc[:,c]:
+                    self.electrodes.append(round(float(row),0))
+
+            #Get Unique electrode xDistances
+            self.electrodesUnique = list(np.unique(self.electrodes))
+
+            xDataIN = self.dataframeEDIT.iloc[:,self.xCols[0]].to_list()
             for item in xDataIN:
                 self.xData.append(float(item))
 
-            yDataIN = self.dataframe.iloc[:,yCols].to_list()
-            for item in yDataIN:
-                self.yData.append(float(item))
+            zDataIN = self.dataframeEDIT.iloc[:,zCols].to_list()
+            for item in zDataIN:
+                self.zData.append(float(item))
 
-            valIN = self.dataframe.iloc[:,valCols].to_list()
+            valIN = self.dataframeEDIT.iloc[:,valCols].to_list()
             for item in valIN:
                 self.values.append(float(item))
 
-            #for item in self.dataframe:
-            #    print(item)
-
             xDistCols = ['B(x)', 'A(x)', 'N(x)', 'M(x)']
 
-            xDF = pd.DataFrame(self.dataframe.loc[:,xDistCols[:]])
+            xDF = pd.DataFrame(self.dataframeIN.loc[:,xDistCols[:]])
             xDF.columns = xDistCols
             xDF = xDF.astype(float)
             self.xDF = pd.DataFrame()
 
-            self.xDF['A(x)'] = xDF['A(x)']
-            self.xDF['B(x)'] = xDF['B(x)']
-            self.xDF['M(x)'] = xDF['M(x)']
-            self.xDF['N(x)'] = xDF['N(x)']
-
-            #print(self.xDF)
+            self.xDF['A(x)'] = self.dataframeEDIT['A(x)']
+            self.xDF['B(x)'] = self.dataframeEDIT['B(x)']
+            self.xDF['M(x)'] = self.dataframeEDIT['M(x)']
+            self.xDF['N(x)'] = self.dataframeEDIT['N(x)']
 
             xList = []
             for item in xDistCols:
-                xDistList = self.dataframe.loc[:,item].to_list()
+                xDistList = self.dataframeIN.loc[:,item].to_list()
 
                 for item in xDistList:
                     xList.append(float(item))
 
-            #print(self.dataframe)
-
             minvals = self.xDF.min()
             self.minXDist = minvals.min()
             maxvals = self.xDF.max()
-            #print(maxvals)
             self.maxXDist = maxvals.max()
+            #self.minXDist = min(self.xData)
+            #self.maxXDist = max(self.xData)
+            self.minDepth = min(self.zData)
+            self.maxDepth = max(self.zData)
+            self.maxResist = max(self.values)
+
+        elif self.inputDataExt == '.VTK':
+            self.dataframeIN = self.dataframeIN.astype(float)
+            for i in range(0,len(self.dataframeIN)):
+                self.xData.append(self.dataframeIN.loc[i,'X'])
+                self.yData.append(self.dataframeIN.loc[i,'Y'])
+                self.zData.append(self.dataframeIN.loc[i,'Z'])
+                self.values.append(self.dataframeIN.loc[i,"Resistivity"])
+
+                self.minXDist = min(self.xData)
+                self.maxXDist = max(self.xData)
+                self.minDepth = min(self.zData)
+                self.maxDepth = max(self.zData)
+                self.maxResist = max(self.values)
+
+        elif self.inputDataExt == '.XYZ':
+            pass
 
         else:
-            self.xCols = [1,3,5,7]
-            aVals = []
-            nFacs = []
-            yCols = [2,4,6,8]
-            valCols = 9
+            pass
 
-            if self.autoShiftBx.GetValue():
-                startPt = []
-                for c in self.xCols:
-                    startPt.append(float(self.dataframe.iloc[:,c].min()))
-                startPt = min(startPt)
+        if self.zData[0] < 0:
+            for i in enumerate(self.zData):
+                self.zData[i[0]] = self.zData[i[0]]*-1
 
-                if startPt != 0:
-                    for c in self.xCols:
-                        for i in enumerate(self.dataframe.iloc[:,c]):
-                            self.dataframe.iloc[i[0],c] = i[1] - startPt
-
-                    if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
-                        outPath = self.dataPath.stem.split('-')[0]
-                    else:
-                        outPath = self.dataPath.stem.split('.')[0]
-                        if outPath.startswith('lr'):
-                            outPath = outPath[2:]
-                    outPath = outPath + '_shift_AdvEdit.dat'
-                    self.exportTXT.SetValue(str(self.dataPath.with_name(outPath)))
-
-            if self.includeTopoBx.GetValue():
-                outPath = self.exportTXT.GetValue()[:-4]
-                outPath = outPath + "_topo.dat"
-                self.exportTXT.SetValue(outPath)
-
-            self.xDataIN = []
-
-            xList = []
-            for row in range(0,len(self.dataframe)):
-                i = 0
-                for col in self.xCols:
-                    item = self.dataframe.iloc[row,col]
-
-                    if i < 1:
-                        x1 = item
-                        self.xDataIN.append(round(float(item),0))
-                    elif i < 2:
-                        x2 = item
-                        self.xDataIN.append(round(float(item),0))
-                    elif i < 3:
-                        x3 = item
-                        self.xDataIN.append(round(float(item),0))
-                    else:
-                        x4 = item
-                        self.xDataIN.append(round(float(item),0))
-                        x = (float(x4) + float(x1)) / 2
-                        a = float(x2) - float(x1)
-                        n = (float(x3) - float(x2)) / a
-
-                        self.xData.append(float(x))
-                        self.yData.append(float(round((((n ** 2) * -0.0018) + 0.2752 * n + 0.1483) * a, 1)))
-                        self.values.append(float(self.dataframe.iloc[row, valCols]))
-
-                    xList.append(float(item))
-                    i += 1
-
-
-            self.xDF = pd.DataFrame(self.dataframe.iloc[:,self.xCols[:]])
-            self.xDF = self.xDF.astype(float)
-
-            self.maxXDist = max(xList)
-            self.minXDist = min(xList)
-
-        if self.yData[0] < 0:
-            for i in enumerate(self.yData):
-                self.yData[i[0]] = self.yData[i[0]]*-1
-
-        self.maxDepth = max(self.yData)
+        self.maxDepth = max(self.zData)
+        self.minResist = min(self.values)
         self.maxResist = max(self.values)
-        self.fileHeaderDict['DataPts'] = len(self.dataframe)
+        self.fileHeaderDict['DataPts'] = len(self.dataframeIN)
+
 
         dt = []
         dt.append(self.xData)
-        dt.append(self.yData)
+        dt.append(self.zData)
         dt.append(self.values)
         cols = ['xDist', 'Depth', 'Value']
 
@@ -918,38 +1251,28 @@ class ERTAPP(wx.Frame):
         df = df.transpose()
         df.columns = cols
 
-        uniqueDepths = df.groupby(['Depth']).mean()
-        uniqueDepths = uniqueDepths.drop(['xDist'], axis=1)
 
-        self.df = df.merge(uniqueDepths, on=('Depth'), suffixes=('', '_DtLvlMean'))
-        self.df.rename(columns={'Value_DtLvlMean': 'DtLvlMean'}, inplace=True)
-
-        self.df['PctErr'] = abs((self.df['DtLvlMean'] - self.df['Value'])) / self.df['DtLvlMean']
-        self.df['MeasID'] = self.df.index.copy()
-
-        self.xDataIN = [float(i) for i in self.xDataIN]
-        self.xDataIN = sorted(set(self.xDataIN))
-        self.dataframeEDIT = self.dataframe.copy()
-
-        self.dataframeEDIT= pd.concat([self.dataframeEDIT,self.df],axis=1)
-        self.dataframeEDIT["Keep"] = self.dataframeEDIT['PctErr']*0+1
-        self.dataframeEDIT['Keep'] = self.dataframeEDIT['Keep'].astype(bool)
-
-        #print(self.dataframeEDIT)
-        xDataINList = []
-        for i in self.xDataIN:
-            xDataINList.append(round(i,0))
-        self.electrodes = sorted(xDataINList)
-        self.electState = []
-        for i in self.electrodes:
-            self.electState.append(bool(i*0+1))
+        if self.inputDataExt =='.XYZ' or self.inputDataExt == '.VTK':
+            for i in range(0,len(self.dataframeIN)):
+                self.df = df.copy()
+                self.df.loc[i,"DtLvlMean"] = 0.0
+                self.df.loc[i,'PctErr'] = 0.0
+                self.df.loc[i,'MeasID'] = i
+        else:
+            self.electState = []
+            self.electNo = []
+            self.electNoCalc = []
+            for i in enumerate(self.electrodesUnique):
+                self.electState.append(bool(i[1]*0+1))
+                self.electNo.append(i[0])
+            self.electNoList = np.arange(0, len(self.electrodesUnique),1)
+            self.electList = list(self.electNoList*float(self.fileHeaderDict['minElectSpcng']))
+            self.electNoList = list(self.electNoList)
 
         self.dataEditMsg.SetLabelText(str(len(self.dataframeEDIT)) + ' data pts')
 
+    #Function that displays information gleaned from data that is read in
     def generateProfileInfo(self):
-
-        print("FileHeaderDict")
-        print(self.fileHeaderDict)
 
         self.msgProfileName.SetLabelText(str(self.fileHeaderDict['Filename']))
         self.msgProfileRange.SetLabelText(str(round(self.minXDist,0)) + " - " + str(round(self.maxXDist,0)))
@@ -964,91 +1287,137 @@ class ERTAPP(wx.Frame):
         self.sliderVal = self.editSlider.GetValue()
         self.dataVizMsg2.SetLabelText('Electrode at ' + str(self.sliderVal) + ' m')
 
+    #Event function that captures event and runs another, simpler function
     def graphChartEvent(self, event):
         self.graphChart()
 
+    #Function that writes the Graphical editing display to the chart
     def graphChart(self):
-        self.editSlider.Show()
+        if self.inputDataExt == '.VTK' or self.inputDataExt == '.XYZ':
+            self.editSlider.Hide()
+            self.saveEditsBtn.Hide()
+            self.dataVizInput.Hide()
+            self.dataVizInputBtn.Hide()
+            self.electrodeToggleBtn.Hide()
+        else:
+            self.editSlider.Show()
+            self.saveEditsBtn.Hide()
+            self.dataVizInput.Show()
+            self.dataVizInputBtn.Show()
+            self.electrodeToggleBtn.Show()
+            self.editSlider.SetLabelText(str(self.electList[int(self.editSlider.GetValue())]))
 
         if self.currentChart != 'Graph':
             self.editSlider.SetValue(0)
         self.currentChart = 'Graph'
 
         self.dataVizMsg1.SetLabelText('Graphical Editing Interface')
-        self.saveEditsBtn.Hide()
-        self.dataVizInput.Show()
-        self.dataVizInputBtn.Show()
-        self.electrodeToggleBtn.Show()
 
         x = []
         z = []
         v = []
         pe = []
+        n1 = []
+        n2 = []
 
         KeepList = self.dataframeEDIT['Keep'].to_list()
         peList = self.dataframeEDIT['PctErr'].to_list()
 
         for i in enumerate(KeepList):
             if i[1]:
-                x.append(self.xData[i[0]])
-                z.append(self.yData[i[0]])
-                v.append(self.values[i[0]])
+                x.append(self.dataframeEDIT.loc[i[0],'PseudoX'])
+                z.append(self.dataframeEDIT.loc[i[0],'PseudoZ'])
+                v.append(self.dataframeEDIT.loc[i[0],'AppResist'])
                 pe.append(peList[i[0]])
 
         self.axes.clear()
 
         if 'scipy.interpolate' in sys.modules:
-            self.makeColormesh(x,z,v, pe)
+            self.makeColormesh(x,z,v, pe,n1,n2)
         else:
             ptSize = round(100/self.maxXDist*125,1)
             self.axes.scatter(x,z, c=v,edgecolors='black',s=ptSize, marker='h')
 
-        self.axes.set_ylim(self.maxDepth*1.15,0)
-        self.axes.set_xlabel('X-Distance (m)')
-        self.axes.set_ylabel('Depth (m)')
-        self.axes.xaxis.tick_top()
+    #Function that creates a colormesh/interpolated image for both the Graph Edit display and Rev. Edit display
+    def makeColormesh(self,x,z,v, pe,xOmit,zOmit):
 
-        self.editSlider.SetMax(int(self.maxXDist))
-        self.editSlider.SetMin(int(self.minXDist))
-
-        self.editSlider.SetTickFreq(5)
-
-        self.canvas.draw()
-
-    def makeColormesh(self,x,z,v, pe):
         for i in enumerate(v):
-            v[i[0]] = abs(i[1])
+            v[i[0]] = abs(float(i[1]))
 
         xi, zi = np.linspace(min(x), max(x), 300), np.linspace(min(z), max(z), 300)
         xi, zi = np.meshgrid(xi, zi)
 
         vi = scipy.interpolate.griddata((x, z), v, (xi, zi), method='linear')
 
-        ptSize = round(100 / self.maxXDist * 30*2, 1)
-
-        vmax = np.percentile(v,98)
-        vmin = np.percentile(v,2)
+        ptSize = round(100 / self.maxXDist * 35, 1)
 
         self.figure.clear()
         self.axes = self.figure.add_subplot(111)
+        cmap = pL.cm.binary
+        my_cmap = cmap(np.arange(cmap.N))
+        my_cmap[:,-1] = np.linspace(0,1,cmap.N)
+        #my_cmap = cmap(np.arange(pe))
+        #my_cmap[:,-1] = np.linspace(0,1,pe)
+        my_cmap = matplotlib.colors.ListedColormap(my_cmap)
 
-        im = self.axes.imshow(vi, vmin=vmin, vmax=vmax, origin='lower',
-                    extent=[min(x), max(x), min(z), max(z) * 1.1],
+        vmax = np.percentile(v, 98)
+        vmin = np.percentile(v, 2)
+        minx = min(x)
+        maxx = max(x)
+        minz = min(z)
+        maxz = max(z)
+
+        norm = matplotlib.colors.LogNorm(vmin = vmin, vmax = vmax)
+        #im = self.axes.imshow(vi, vmin=vmin, vmax=vmax, origin='lower',
+        im = self.axes.imshow(vi, origin='lower',
+                    extent=[minx, maxx, minz, maxz],
                     aspect='auto',
                     cmap='nipy_spectral',
-                    norm = matplotlib.colors.LogNorm(vmin = vmin, vmax = vmax),
+                    norm = norm,
                     interpolation='bilinear')
-
-        print('Vmin: '+ str(vmin))
-
-        print('Vmax: ' + str(vmax))
-        print('Actual Max: ' + str(max(v)))
         self.figure.colorbar(im, orientation='horizontal')
-        self.axes.scatter(x, z, c=pe, edgecolors='black', s=ptSize, marker='h', alpha=0.5, cmap='binary')
 
+        if self.currentChart == 'Graph':
+            self.axes.scatter(x, z, c=pe, edgecolors=None, s=ptSize, marker='o', cmap=my_cmap)
+            if abs(self.minDepth) < 10 :
+                self.axes.set_ylim(self.maxDepth * 1.15, 0)
+            else:
+                depthrange = abs(self.maxDepth-self.minDepth)
+                self.axes.set_ylim(self.minDepth-(depthrange*0.05), self.maxDepth + (depthrange*0.05))
+            self.axes.set_xlabel('X-Distance (m)')
+            self.axes.set_ylabel('Depth (m)')
+            self.axes.xaxis.tick_top()
+
+            if self.inputDataExt == '.VTK' or self.inputDataExt == '.XYZ':
+                pass
+            else:
+                self.editSlider.SetMax(int(max(self.electNoList)))
+                self.editSlider.SetMin(int(min(self.electNoList)))
+
+            self.editSlider.SetTickFreq(1)
+
+            self.canvas.draw()
+
+        elif self.currentChart == 'Review':
+            self.axes.scatter(xOmit, zOmit, c='black', s=ptSize/1.5, marker='x')
+            if abs(self.minDepth) < 10 :
+                self.axes.set_ylim(self.maxDepth * 1.15, 0)
+            else:
+                depthrange = abs(self.maxDepth - self.minDepth)
+                self.axes.set_ylim(self.minDepth - (depthrange * 0.05), self.maxDepth + (depthrange * 0.05))
+            self.axes.set_xlabel('X-Distance (m)')
+            self.axes.set_ylabel('Elev/Depth (m)')
+            self.axes.xaxis.tick_top()
+
+        self.canvas.draw()
+
+        #self.axes.scatter(x, z, c=pe, edgecolors='none', s=ptSize, marker='h', alpha=0.5, cmap='binary')
+
+    #Event function that captures event and runs another, simpler function
     def statChartEvent(self,event):
         self.statChart()
 
+    #Function that displays a histogram on the chart for use in the statistical editing display
     def statChart(self):
 
         self.dataVizMsg1.SetLabelText('Statistical Editing Interface')
@@ -1061,22 +1430,24 @@ class ERTAPP(wx.Frame):
         self.dataVizInputBtn.Show()
         self.electrodeToggleBtn.Hide()
 
-        peIndex =  int(self.dataframeEDIT.columns.get_loc('PctErr'))
-
         KeepList = self.dataframeEDIT.loc[:,'Keep'].to_list()
-        peList = self.dataframeEDIT.iloc[:,peIndex].to_list()
+        peList = self.dataframeEDIT.loc[:,'PctErr'].to_list()
 
         pctErr = []
         for i in enumerate(KeepList):
             if i[1]:
-                pctErr.append(float(peList[i[0]]) * 100)
+                if float(peList[i[0]]) >= 0:
+                    pctErr.append(float(peList[i[0]]) * 100)
+                else:
+                    self.dataframeEDIT.loc[i[0],'Keep'] = False
 
         self.editSlider.SetMin(0)
-        self.editSlider.SetMax(int(max(pctErr)))
-        self.editSlider.SetValue(int(max(pctErr)))
+        self.editSlider.SetMax(math.ceil(max(pctErr)))
+        self.editSlider.SetValue(math.ceil(max(pctErr)))
         self.editSlider.SetTickFreq(1)
 
         self.figure.clear()
+        self.axes.clear()
         self.axes = self.figure.add_subplot(111)
         self.axes.hist(pctErr, bins=30)
         self.axes.set_xlim(0, max(pctErr)*1.1)
@@ -1084,9 +1455,11 @@ class ERTAPP(wx.Frame):
 
         self.canvas.draw()
 
+    #Event function that captures event and runs another, simpler function
     def GPSChartEvent(self,event):
         self.GPSChart()
 
+    #Function that displays the GPS data on the chart
     def GPSChart(self):
         self.editSlider.Hide()
         self.electrodeToggleBtn.Hide()
@@ -1096,6 +1469,8 @@ class ERTAPP(wx.Frame):
 
         self.currentChart = 'GPS'
         self.dataVizMsg1.SetLabelText('GPS Data Viewer')
+        if len(self.GPSpath.stem) < 1:
+            self.GPSpath = ''
         self.dataVizMsg2.SetLabelText(str(self.GPSpath.stem))
 
         self.getGPSVals()
@@ -1153,9 +1528,11 @@ class ERTAPP(wx.Frame):
 
         self.canvas.draw()
 
+    #Event function that captures event and runs another, simpler function
     def topoChartEvent(self,event):
         self.topoChart()
 
+    #Function that displays the topographical data on the chart
     def topoChart(self):
         self.editSlider.Hide()
         self.electrodeToggleBtn.Hide()
@@ -1186,19 +1563,21 @@ class ERTAPP(wx.Frame):
         self.axes.xaxis.tick_bottom()
 
         self.canvas.draw()
-
+    
+    #Event function that captures event and runs another, simpler function
     def onSliderEditEVENT(self,event):
         self.onSliderEdit()
 
+    #Function that updates associated variables and other parameters as slider is moved/edited
     def onSliderEdit(self):
-        self.sliderVal = float(self.editSlider.GetValue())
         if self.currentChart == 'Graph':
-
-            if self.sliderVal in self.electrodes:
+            self.sliderVal = self.electList[int(self.editSlider.GetValue())]
+            self.editSlider.SetLabelText(str(self.sliderVal))
+            if self.sliderVal in self.electrodesUnique:
 
                 self.electrodeToggleBtn.Show()
 
-                toggleState = self.electState[int(self.electrodes.index(self.sliderVal))]
+                toggleState = self.electState[int(self.electrodesUnique.index(self.sliderVal))]
                 self.electrodeToggleBtn.SetValue(toggleState)
 
                 if toggleState == True:
@@ -1211,10 +1590,11 @@ class ERTAPP(wx.Frame):
                     self.dataVizMsg2.SetLabelText("Electrode at " + str(self.sliderVal) + " m is not in use")
 
             else:
-                self.dataVizMsg2.SetLabelText('No Electrode at this x-location')
+                self.dataVizMsg2.SetLabelText('No Electrode at '+ str(self.sliderVal) + ' m.')
                 self.electrodeToggleBtn.Hide()
-        elif self.currentChart == 'Stat':
 
+        elif self.currentChart == 'Stat':
+            self.sliderVal = self.editSlider.GetValue()
             currData = 0
             for i in self.dataframeEDIT["Keep"]:
                 if i:
@@ -1231,10 +1611,217 @@ class ERTAPP(wx.Frame):
         else:
             self.dataVizMsg2.SetLabelText('Value: ' + str(self.sliderVal))
 
+    #Function that updates boolean variables and text when Edit Type toggle is pushed
+    def onEditTypeToggle(self, event):
+        self.editTypeToggleState = self.editTypeToggleBtn.GetValue()
+        choiceListInd = self.editDataType.GetSelection()
+
+        if self.editTypeToggleState == True:
+            if self.editDataType.GetSelection() > -1:
+                self.editTypeToggleBtn.SetLabelText('Pts Outside Range')
+                self.editDataChoiceBool[1][choiceListInd] = True
+            else:
+                self.editTypeToggleState = False
+                self.setEditTypeToggleBtn.SetValue(False)
+        elif self.editTypeToggleState == False:
+            if self.editDataType.GetSelection() > -1:
+                self.editDataChoiceBool[1][choiceListInd] = False 
+            self.editTypeToggleBtn.SetLabelText('Pts in Range')
+   
+    #Function that updates associated variables and text when Select Edit Type list item is selected
+    def onSelectEditDataType(self,event):
+        choiceListInd = self.editDataType.GetSelection()
+        colNumBase = [14, 13, [1, 3, 5, 7], 16, 19, 11, 12]
+
+        self.setEditToggleState = self.editDataChoiceBool[0][choiceListInd]
+        self.editTypeToggleState = self.editDataChoiceBool[1][choiceListInd]
+
+        self.setEditToggleBtn.SetValue(self.setEditToggleState)
+        self.editTypeToggleBtn.SetValue(self.editTypeToggleState)
+
+        if float(self.editDataValues[choiceListInd][0]) == 0 and float(self.editDataValues[choiceListInd][1]) == 0:
+            #Set min value in box
+            if type(colNumBase[choiceListInd]) is list:
+                minVal = []
+                for i in colNumBase[choiceListInd]:
+                    minVal.append(self.dataframeEDIT[self.dataframeEDITColHeaders[i]].min())
+                minVal = min(minVal)
+            else:
+                minVal = self.dataframeEDIT[self.editDataChoiceList[choiceListInd]].min()
+            self.inputTxtMinRem.SetValue(str(minVal))
+
+            # Set max value in box
+            if type(colNumBase[choiceListInd]) is list:
+                maxVal = []
+                for i in colNumBase[choiceListInd]:
+                    maxVal.append(self.dataframeEDIT[self.dataframeEDITColHeaders[i]].max())
+                maxVal = max(maxVal)
+            else:
+                maxVal = self.dataframeEDIT[self.editDataChoiceList[choiceListInd]].max()
+            self.inputTxtMaxRem.SetValue(str(maxVal))
+
+        else:
+            self.inputTxtMinRem.SetValue(str(self.editDataValues[choiceListInd][0]))
+            self.inputTxtMaxRem.SetValue(str(self.editDataValues[choiceListInd][1]))
+        
+        if self.setEditToggleState:
+            self.setEditToggleBtn.SetLabelText('Used')
+        else:
+            self.setEditToggleBtn.SetLabelText('Not Used')
+        
+        if self.editTypeToggleState:
+            self.editTypeToggleBtn.SetLabelText('Pts Outside Range')
+        else:
+            self.editTypeToggleBtn.SetLabelText('Pts in Range')
+
+    #Function that updates associated boolean variables and text when Set Edit toggle is pushed (for which data is used in edit)
+    def onSetEditToggle(self,event):
+        self.setEditToggleState = self.setEditToggleBtn.GetValue()
+        choiceListInd = self.editDataType.GetSelection()
+
+        if self.setEditToggleState == True:
+            if self.editDataType.GetSelection() > -1:
+                self.editDataChoiceBool[0][choiceListInd] = True
+                self.setEditToggleBtn.SetLabelText('Used')
+            else:
+                self.setEditToggleState = False
+                self.setEditToggleBtn.SetValue(False)
+        elif self.setEditToggleState == False:
+            if self.editDataType.GetSelection() > -1:
+                self.editDataChoiceBool[0][choiceListInd] = False
+            self.setEditToggleBtn.SetLabelText('Not Used')
+        self.setEditDataValues()
+    
+    #Event function that captures event and runs another, simpler function
+    def onEditDataValueChangeEvent(self,event):
+        self.setEditDataValues()
+
+    #Function that often pairs with other functions to fill in min and max values (or preset values) when data type selected for editing is switched
+    def setEditDataValues(self):
+        choiceListInd = self.editDataType.GetSelection()
+        colNumBase = [14, 13, [1, 3, 5, 7], 16, 19, 11, 12]
+
+        #Set Min Value Box
+        if self.inputTxtMinRem.GetValue().isnumeric():
+            self.editDataValues[choiceListInd][0] = float(self.inputTxtMinRem.GetValue())
+        elif self.inputTxtMinRem.GetValue().lower() == 'min':
+            if type(colNumBase[choiceListInd]) is list:
+                minVal = []
+                for i in colNumBase[choiceListInd]:
+                    minVal.append(self.dataframeEDIT[self.dataframeEDITColHeaders[i]].min())
+                minVal = min(minVal)
+            else:
+                minVal = self.dataframeEDIT[self.editDataChoiceList[choiceListInd]].min()
+            self.inputTxtMinRem.SetValue(str(minVal))
+            self.editDataValues[choiceListInd][0] = float(minVal)
+        else:
+            pass
+            # self.editDataChoiceList = ['AppResist', 'Resistance', 'Electrode x-Dists', 'Variance', 'PctErr', 'PseudoX','PseudoZ']
+
+        #Set Max Value Box
+        if self.inputTxtMaxRem.GetValue().isnumeric():
+            self.editDataValues[choiceListInd][1] = float(self.inputTxtMaxRem.GetValue())
+        elif self.inputTxtMaxRem.GetValue().lower() == 'max':
+            if type(colNumBase[choiceListInd]) is list:
+                maxVal = []
+                for i in colNumBase[choiceListInd]:
+                    maxVal.append(self.dataframeEDIT[self.dataframeEDITColHeaders[i]].max())
+                maxVal = max(maxVal)
+            else:
+                maxVal = self.dataframeEDIT[self.editDataChoiceList[choiceListInd]].max()
+            self.inputTxtMaxRem.SetValue(str(maxVal))
+            self.editDataValues[choiceListInd][1] = float(maxVal)
+        else:
+            pass
+
+    #Function that updates associated variables when and/or logic button for data editing is selected        
+    def onLogicToggle(self, event):
+        self.editLogicToggleState = self.editLogicToggleBtn.GetValue()
+        if self.editLogicToggleState == True:
+            self.editLogicToggleBtn.SetLabelText('AND')
+        elif self.editLogicToggleState == False:
+            self.editLogicToggleBtn.SetLabelText('OR')
+
+    #Event function that runs when the edit points button is selected. Decides whether points should be removed or kept
+    def onRemovePts(self,event):
+        self.setEditDataValues()
+        #self.editDataChoiceList = ['AppResist', 'Resistance', 'Electrode x-Dists', 'Variance', 'PctErr', 'PseudoX','PseudoZ']
+
+        colNumBase = [14,13,[1,3,5,7],16,19,11,12] #Column numbers in self.dataframeEDIT listed in same order/indices as items the self.editDataChoice box
+        choiceBoxItems=[0,1,    2,     3, 4, 5, 6]
+        keepDFBase = [ 4, 5,    6,     7, 8, 9,10] #Columns in keepDF that align with self.dataframeEDIT columns (and the edit choice box)
+        keepDFColNames = ['OR', 'AND', 'GraphChart', 'StatChart','AppResist','Resistance','Electrode x-Dists', 'Variance','PctErr','PseudoX','PseudoZ']
+        colNums = [] #will only include column numbers of data that is used for point removal
+        keepDFCols = [] #same as above, except for keepDF col Nums; will be same length as colNums and correspond
+        IORange = [] #holds information on whether data used is for point removal within range or out of range; will be same length as colNums and correspond
+        choiceInd = []
+
+        for i in enumerate(colNumBase):
+            if self.editDataChoiceBool[0][i[0]]: #Determines if toggle button for whether that data type is used in editing is checked
+                colNums.append(i[1])     #Add column number of self.dataframeEDIT to pull data out for determining if it is removed
+                choiceInd.append(choiceBoxItems[i[0]])
+                keepDFCols.append(keepDFBase[i[0]]) #Add column number for self.keepDF for placing true/false keep information later
+                IORange.append(self.editDataChoiceBool[1][i[0]]) #Add True/False about inside or outside range editing
+        colNames = self.dataframeEDIT.columns #used later to access data points
+
+        if len(colNums) < 1:
+            pass
+            self.dataVizMsg2.SetLabelText('No Points Removed')
+            #self.dataEditMsg.SetLabelText()
+        elif self.inputDataExt == '.VTK':
+            self.dataVizMsg2.SetLabelText('Cannot remove data points from VTK files')        
+        else:
+            # Create list to hold items if they are to be acted on; starts all true. For AND, any false value removes data point
+            #keepList = []
+            #for r in range(0, self.dataLengthIN):
+            #    for c in keepDFBase:
+            #        keepList.append(self.keepDF.iloc[r,c])
+            index = -1
+
+            for c in enumerate(colNums):
+                index = -1
+                if type(c[1]) is list: 
+                    keepList = [] #Empty keepList and start anew
+                    keepList = self.keepDF[keepDFColNames[keepDFCols[c[0]]]].tolist() #Convert previous set of true/false (keep/remove) values from column to list as input
+
+                    for r in range(0, self.dataLengthIN):
+                        listBoolCt = 0
+                        for item in c[1]:
+                            if IORange[c[0]]: #True = remove points outside range (else, False = remove points inside range)
+                                if self.dataframeEDIT.iloc[r,item] < float(self.editDataValues[choiceInd[0]][0]) or self.dataframeEDIT.iloc[r,item] > float(self.editDataValues[choiceInd[0]][1]):
+                                    listBoolCt = listBoolCt + 1 #>0 if row/data point should be removed
+                            else: #If IORange is false (Points inside range are removed)...
+                                if self.dataframeEDIT.iloc[r,item] >= float(self.editDataValues[choiceInd[0]][0]) and self.dataframeEDIT.iloc[r,item] <= float(self.editDataValues[choiceInd[0]][1]):
+                                    listBoolCt = listBoolCt + 1 #>0 if row/data point should be removed
+                        if listBoolCt != 0: #0 if row should be kept, not 0 means it should be removed (False)
+                            keepList[r] = False
+                    
+                
+                else: #if the columns are not a list of columns
+
+                    keepList = [] #Empty keepList and start anew
+                    keepList = self.keepDF[keepDFColNames[keepDFCols[c[0]]]].tolist() #Convert previous set of true/false (keep/remove) values from column to list as input
+                
+                    #Iterate through each row in col c to see if it is in range
+                    for r in self.dataframeEDIT[colNames[c[1]]]:
+                        index = index + 1
+                        if IORange[c[0]]: #True = remove points outside range (else, False = remove points inside range)
+                            if r < float(self.editDataValues[c[0]][0]) or r > float(self.editDataValues[c[0]][1]):
+                                keepList[index] = False #Remove data point if it is outside range specified
+                        else:
+                            if r >= float(self.editDataValues[c[0]][0]) and r <= float(self.editDataValues[c[0]][1]):
+                                keepList[index] = False #Remove data point if it is within range specified
+
+                self.keepDF[keepDFColNames[keepDFCols[c[0]]]] = pd.Series(keepList)
+        
+        self.updateANDORKeepColumns()
+        self.updateDEKeep()
+        self.graphChart()
+
+    #Event function that removes any data associated with electrode at slider location
     def ONtoggle(self,event):
         self.ToggleState = self.electrodeToggleBtn.GetValue()
-        self.sliderVal = self.editSlider.GetValue()
-
+        self.sliderVal = self.electList[int(self.editSlider.GetValue())]
 
         if self.ToggleState == True:
             self.dataVizMsg2.SetLabelText("Electrode at "+ str(self.sliderVal) +" m is in use")
@@ -1250,9 +1837,21 @@ class ERTAPP(wx.Frame):
 
             for i in self.dataframeEDIT.index:
                 if i in keep:
-                    self.dataframeEDIT.loc[[i],['Keep']] = True
+                    self.keepDF.loc[i,['GraphChart']] = True
+                    self.keepDF.loc[i,'OR'] = all(self.keepDF.iloc[i,2:])
+                    self.keepDF.loc[i,'AND'] = any(self.keepDF.iloc[i,2:])
+                if self.editLogicToggleBtn.GetLabelText() == 'OR':
+                    if self.keepDF.loc[i,'OR']:
+                        self.dataframeEDIT.loc[[i],['Keep']] = True
+                    else:
+                        self.dataframeEDIT.loc[[i],['Keep']] = False
+                elif self.editLogicToggleBtn.GetLabelText() == 'AND':
+                    if self.keepDF.loc[i,'AND']:
+                        self.dataframeEDIT.loc[[i],['Keep']] = True
+                    else:
+                        self.dataframeEDIT.loc[[i],['Keep']] = False
 
-            eIndex = int(self.electrodes.index(self.sliderVal))
+            eIndex = int(self.electrodesUnique.index(self.sliderVal))
             self.electState[eIndex] = True
 
         elif self.ToggleState == False:
@@ -1269,12 +1868,23 @@ class ERTAPP(wx.Frame):
 
             for i in self.dataframeEDIT.index:
                 if i in lose:
-                    self.dataframeEDIT.loc[[i],['Keep']] = False
-
-            #change self.electState to True
-            eIndex = int(self.electrodes.index(self.sliderVal))
+                    self.keepDF.loc[i,['GraphChart']] = False
+                    self.keepDF.loc[i,'OR'] = all(self.keepDF.iloc[i,2:])
+                    self.keepDF.loc[i,'AND'] = any(self.keepDF.iloc[i,2:])
+                if self.editLogicToggleBtn.GetLabelText() == 'OR':
+                    if self.keepDF.loc[i,'OR']:
+                        self.dataframeEDIT.loc[[i],['Keep']] = True
+                    else:
+                        self.dataframeEDIT.loc[[i],['Keep']] = False
+                elif self.editLogicToggleBtn.GetLabelText() == 'AND':
+                    if self.keepDF.loc[i,'AND']:
+                        self.dataframeEDIT.loc[[i],['Keep']] = True
+                    else:
+                        self.dataframeEDIT.loc[[i],['Keep']] = False
+            
+            #Change self.electState to True
+            eIndex = int(self.electrodesUnique.index(self.sliderVal))############HERE I AM, FIX ME!!!!!!
             self.electState[eIndex] = False
-
         else:
             self.dataVizMsg2.SetLabelText("uhh, this is wierd")
 
@@ -1282,12 +1892,12 @@ class ERTAPP(wx.Frame):
         for i in self.dataframeEDIT["Keep"]:
             if i:
                 dataRetained = dataRetained + 1
-                #print(dataRetained)
 
         self.dataEditMsg.SetLabelText(str(dataRetained) + '/' + str(len(self.dataframeEDIT)) + 'pts (' + str(round(dataRetained/len(self.dataframeEDIT)*100,1)) + '%)')
 
         self.graphChart()
 
+    #Event function that "saves" edits (updates Keep col) when save button is pushed
     def ONSaveEdits(self,event):
 
         if self.currentChart == 'Graph':
@@ -1296,44 +1906,54 @@ class ERTAPP(wx.Frame):
         elif self.currentChart == 'Stat':
             #self.sliderVal = float(self.editSlider.GetValue())
             peIndex = self.dataframeEDIT.columns.get_loc('PctErr')
-            lose = []
+            
+            fDF = np.zeros_like(self.dataframeEDIT,dtype=bool)
+            fDF = pd.DataFrame(fDF[:,0]) #Create Dataframe with just Falses to fill in keepDF
 
-            for r in enumerate(self.dataframeEDIT.iloc[:, peIndex]):
-                if float(r[1]) >= float(self.sliderVal)/100.0:
-                    lose.append(r[0])
+            self.keepDF['StatChart'] = fDF.where(self.dataframeEDIT['PctErr'] >= float(self.sliderVal)/100.0,other=True)
+            
+            for r in self.keepDF.index:
+                self.keepDF.loc[r,'OR'] = all(self.keepDF.iloc[r,2:11])
+                self.keepDF.loc[r,'AND'] = any(self.keepDF.iloc[r,2:11])
+            self.updateDEKeep()
 
-            kIndex = int(self.dataframeEDIT.columns.get_loc('Keep'))
+            LogicSetting = self.editLogicToggleBtn.GetLabelText() #Which logic "setting" (AND or OR) are we using?
 
-            for i in self.dataframeEDIT.index:
-                if i in lose:
-                    self.dataframeEDIT.iloc[i, kIndex] = False
+            if LogicSetting == 'OR':#If OR logic is being used,
+                dataRetained = self.keepDF['OR'].sum()
+            elif LogicSetting == 'AND':#If AND logic is being used
+                dataRetained = self.keepDF['AND'].sum()
 
-            dataRetained = 0
-            for i in self.dataframeEDIT["Keep"]:
-                if i:
-                    dataRetained = dataRetained + 1
-
-            self.dataEditMsg.SetLabelText(str(dataRetained) + '/' + str(len(self.dataframeEDIT)) + 'pts (' + str(
+            self.dataEditMsg.SetLabelText(str(dataRetained) + '/' + str(len(self.keepDF['OR'])) + ' pts (' + str(
                 round(dataRetained / len(self.dataframeEDIT) * 100, 1)) + '%)')
 
             self.statChart()
         else:
             pass
 
+    #Event function that updates variables based on data input into data viz box when associated button is selected
     def ONdataVizInput(self,event):
         if self.dataVizInput.GetValue().isnumeric():
-            if float(self.dataVizInput.GetValue()) < float(self.editSlider.GetMin()) or float(self.dataVizInput.GetValue()) > float(self.editSlider.GetMax()):
-                self.dataVizMsg2.SetValue('Error: Value must integer be between '+ str(self.editSlider.GetMin())+ ' and '+str(self.editSlider.GetMax()))
+            if float(self.dataVizInput.GetValue())/float(self.fileHeaderDict['minElectSpcng']) < float(self.editSlider.GetMin()) or float(self.dataVizInput.GetValue())/float(self.fileHeaderDict['minElectSpcng']) > float(self.editSlider.GetMax()):
+                self.dataVizMsg2.SetLabelText('Error: Value must integer between '+ str(self.editSlider.GetMin())+ ' and '+str(self.editSlider.GetMax()))
             else:
-                self.editSlider.SetValue(int(self.dataVizInput.GetValue()))
+                if self.currentChart == 'Graph':
+                    self.editSlider.SetValue(int(float(self.dataVizInput.GetValue())/float(self.fileHeaderDict['minElectSpcng'])))
+                    self.editSlider.SetLabelText(str(int(self.editSlider.GetValue())*float(self.fileHeaderDict['minElectSpcng'])))
+                elif self.currentChart == 'Stat':
+                    self.editSlider.SetValue(int(float(self.dataVizInput.GetValue())))
+                    self.editSlider.SetLabelText(str(int(self.editSlider.GetValue())))
+
                 self.dataVizInput.SetValue('')
         else:
             self.dataVizInput.SetValue('Error: Value must be numeric')
         self.onSliderEdit()
 
+    #Event function that captures event and runs another, simpler function
     def reviewEvent(self,event):
         self.reviewChart()
 
+    #Function that allows vizual review of edited data on chart 
     def reviewChart(self):
         self.editSlider.Hide()
         self.currentChart = 'Review'
@@ -1344,60 +1964,86 @@ class ERTAPP(wx.Frame):
         self.dataVizInputBtn.Hide()
 
         x = []
-        y = []
+        z = []
         v = []
+        pe = []
         xOmit = []
-        yOmit = []
+        zOmit = []
 
+        self.createExportDF()
         for i in enumerate(self.dataframeEDIT['Keep']):
+            x.append(self.dataframeEDIT.loc[i[0], 'PseudoX'])
+            z.append(self.dataframeEDIT.loc[i[0], 'PseudoZ'])
+            v.append(self.dataframeEDIT.loc[i[0], 'AppResist'])
+
             if i[1]:
-                x.append(self.xData[i[0]])
-                y.append(self.yData[i[0]])
-                v.append(self.values[i[0]])
+                pass
             else:
-                xOmit.append(self.xData[i[0]])
-                yOmit.append(self.yData[i[0]])
+                xOmit.append(self.dataframeEDIT.loc[i[0],'PseudoX'])
+                zOmit.append(self.dataframeEDIT.loc[i[0],'PseudoZ'])
 
-        self.axes.clear()
-        ptSize = round(100/self.maxXDist*125,1)
-        self.axes.scatter(x,y, c=v,s=ptSize, marker='h')
-        self.axes.scatter(xOmit,yOmit,c='black',s=ptSize-ptSize*0.333,marker = 'x')
-        self.axes.set_ylim(self.maxDepth*1.1,0)
-        self.axes.set_xlabel('X-Distance (m)')
-        self.axes.set_ylabel('Depth (m)')
-        self.axes.xaxis.tick_top()
+        if 'scipy.interpolate' in sys.modules:
+            self.makeColormesh(x,z,v,pe,xOmit,zOmit)
+        else:
+            ptSize = round(100/self.maxXDist*125,1)
+            self.axes.scatter(x,z, c=v,edgecolors='black',s=ptSize, marker='h')
 
-        self.editSlider.SetMax(self.maxXDist)
-        self.editSlider.SetMin(self.minXDist)
+        #self.axes.scatter(x,z, c=v,s=ptSize, marker='h')
+        #self.axes.scatter(xOmit,zOmit,c='black',s=ptSize-ptSize*0.333,marker = 'x')
 
-        self.editSlider.SetTickFreq(5)
+        #minz = min(z)
+        #maxz = max(z)
+        #zspace = (maxz-minz)/10
+        #self.axes.set_ylim(minz-zspace,maxz+zspace)
+        #self.axes.set_xlabel('X-Distance (m)')
+        #self.axes.set_ylabel('Elev/Depth (m)')
+        #self.axes.xaxis.tick_top()
 
-        self.canvas.draw()
-        pass
+        #self.canvas.draw()
+        #pass
 
+    #Function that updates the "AND" and "OR" columns of self.keepDF based on the Truth values in the other columns
+    def updateANDORKeepColumns(self):
+        for i in self.dataframeEDIT.index:
+            self.keepDF.loc[i,'OR'] = all(self.keepDF.iloc[i,2:])
+            self.keepDF.loc[i,'AND'] = any(self.keepDF.iloc[i,2:])
+
+    #Uses the "And" or "OR" column of self.keepDF to update the Keep column of dataframeEDIT, depending on which is being used at the moment
+    def updateDEKeep(self):
+        LogicSetting = self.editLogicToggleBtn.GetLabelText() #Which logic "setting" (AND or OR) are we using?
+
+        for i in self.keepDF.index:
+            if LogicSetting == 'OR':#If OR logic is being used, and...
+                if self.keepDF.loc[i,'OR']: #If the keepDF OR column is true, dataframeEDIT keep column is true
+                    self.dataframeEDIT.loc[i,'Keep'] = True
+                else:
+                    self.dataframeEDIT.loc[i,'Keep'] = False
+            elif LogicSetting == 'AND': #If AND logic is being used, and...
+                if self.keepDF.loc[i,'AND']: #If the keepDF AND column is true, dataframeEDIT keep column is true
+                    self.dataframeEDIT.loc[i,'Keep'] = True
+                else:
+                    self.dataframeEDIT.loc[i,'Keep'] = False
+        
+    #Function that finds the closest elevation point to electrode and maps out elev of all electrodes
     def getClosestElev(self):
         if len(self.inputTxtTopo.GetValue())>0 and 'Enter Topo Filepath Here' not in self.inputTxtTopo.GetValue():
-            if self.topoDF['xDist'].max() > max(self.electrodes) or self.topoDF['xDist'].min() > min(self.electrodes):
-                if self.topoDF['xDist'].max() > max(self.electrodes):
+            if self.topoDF['xDist'].max() > max(self.electrodesUnique) or self.topoDF['xDist'].min() > min(self.electrodesUnique):
+                if self.topoDF['xDist'].max() > max(self.electrodesUnique):
                     wx.LogError("File format error. Maximum topo X-Distance is greater than maximum electrode X-Distance.")
                 else:
                     wx.LogError("File format error. Minimum topo X-Distance is less than minimum electrode X-Distance.")
             else:
 
-                self.electrodeElevs = [[] for k in range(len(self.electrodes))]
+                self.electrodeElevs = [[] for k in range(len(self.electrodes))]#blank list
 
                 for x in enumerate(self.electrodes):
 
-
                     elecxDist = x[1]
                     elecIndex = x[0]
-                    index = np.argmin(np.abs(np.array(self.topoDF['xDist']) - elecxDist))
+
+                    index = np.argmin(np.abs(np.array(self.topoDF['xDist']) - elecxDist))#finds index of closest elevation
                     nearestTopoxDist = self.topoDF.loc[index,'xDist']
                     nearestTopoElev = self.topoDF.loc[index,'Elev']
-
-                    #print('Electrode X Dist: ' + str(x[1]))
-                    #print("Nearest Topo X Dist: " +str(nearestTopoxDist))
-                    #print("Nearest Topo Elev: " + str(nearestTopoElev))
 
                     if nearestTopoxDist == x[1]:
                         self.electrodeElevs[elecIndex] = nearestTopoElev
@@ -1406,35 +2052,69 @@ class ERTAPP(wx.Frame):
                         mapDenom = nearestTopoxDist - self.topoDF.loc[index-1,'xDist']
                         mVal = float(mapNum/mapDenom)
                         self.electrodeElevs[elecIndex] = nearestTopoElev - (nearestTopoElev-self.topoDF.loc[index-1,'Elev'])*mVal
-                    else:
-
+                    else: #if the nearest TopoxDist is less than our current electrode's x-dist
                         mapNum = self.electrodes[elecIndex] - nearestTopoxDist
-
                         mapDenom = self.topoDF.loc[index+1,'xDist']-nearestTopoxDist
-
                         mVal = float(mapNum/mapDenom)
+                        self.electrodeElevs[elecIndex] = nearestTopoElev + (self.topoDF.loc[index+1,'Elev'] - nearestTopoElev)*mVal
 
-                        self.electrodeElevs[elecIndex] = nearestTopoElev + (nearestTopoElev-self.topoDF.loc[index-1,'Elev'])*mVal
+                blankList = [[] for k in range(len(self.dataframeEDIT['Keep']))]  # blank list
+                self.dataframeEDIT['SurfElevs'] = blankList
 
-        elif self.inputDataExt == '.DAT (LS)':
+                elecXDistColNames = ['A(x)','B(x)','M(x)','N(x)']
+                elecElevColNames =  ['A(z)','B(z)','M(z)','N(z)']
+                elecXDistColNums = [1,3,5,7]
+
+                for c in enumerate(elecXDistColNums):
+                    for x in enumerate(self.dataframeEDIT[elecElevColNames[c[0]]]):
+
+                        elecxDist = x[1]
+                        elecIndex = x[0]
+
+                        index = np.argmin(
+                            np.abs(np.array(self.topoDF['xDist']) - elecxDist))  # finds index of closest elevation
+                        nearestTopoxDist = self.topoDF.loc[index, 'xDist']
+                        nearestTopoElev = self.topoDF.loc[index, 'Elev']
+
+                        if nearestTopoxDist == x[1]:
+                            self.dataframeEDIT.iloc[elecIndex,c[1]+1] = nearestTopoElev
+                        elif nearestTopoxDist >= x[1]:
+                            mapNum = nearestTopoxDist - self.dataframeEDIT.iloc[elecIndex,c[1]+1]
+                            mapDenom = nearestTopoxDist - self.topoDF.loc[index - 1, 'xDist']
+                            mVal = float(mapNum / mapDenom)
+                            self.dataframeEDIT.iloc[elecIndex,c[1]+1] = nearestTopoElev - (
+                                        nearestTopoElev - self.topoDF.loc[index - 1, 'Elev']) * mVal
+                        else:
+                            mapNum = self.dataframeEDIT.iloc[elecIndex,c[1]+1] - nearestTopoxDist
+                            mapDenom = self.topoDF.loc[index + 1, 'xDist'] - nearestTopoxDist
+                            mVal = float(mapNum / mapDenom)
+                            self.dataframeEDIT.iloc[elecIndex,c[1]+1] = nearestTopoElev + (
+                                        nearestTopoElev - self.topoDF.loc[index - 1, 'Elev']) * mVal
+
+                    self.dataframeEDIT['PtElev'] = self.dataframeEDIT[elecElevColNames[c[0]]] - self.dataframeEDIT['PseudoZ']
+        else:
+            pass
+
+        if self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.TXT (LS)':
             self.electrodeElevs = []
 
-            for x in enumerate(self.electrodes):
+            for x in enumerate(self.electrodes): #Checks if there's already elevation data??
                 found = 0
-                for xc in self.xCols:
+                for xc in self.electrodeCols:
                     if found == 0:
                         for i in enumerate(self.dataframeEDIT.iloc[:,xc]):
                             if round(float(x[1]),2) == round(float(i[1]),2):
                                 zc = xc + 1
                                 found = 1
                                 elev = self.dataframeEDIT.iloc[i[0],zc]
-                self.electrodeElevs.append(float(elev))
-
+                    elif found == 1:
+                        self.electrodeElevs.append(float(elev))
         else:
             wx.LogError("No Topography Data Found")
 
+    #Event function to select output file(path) (does not save yet)
     def onExportBrowse(self, event):
-        with wx.FileDialog(self, "Select Export Filepath", style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST) as fileDialog:
+        with wx.FileDialog(self, "Select Export Filepath", style=wx.FD_OPEN) as fileDialog:
             if fileDialog.ShowModal() == wx.ID_CANCEL:
                 return
             self.exportPathname = pathlib.Path(fileDialog.GetPath())
@@ -1446,11 +2126,65 @@ class ERTAPP(wx.Frame):
             except  IOError:
                 wx.LogError("Cannot Open File")
 
+    #Event function that reformats edited data into output format and outputs
     def onExport(self, event):
 
-        dataLeadDF = pd.DataFrame()
-        dataDF = pd.DataFrame(columns=[0, 1, 2, 3, 4, 5,6, 7, 8, 9])
-        dataTailDF = pd.DataFrame()
+        if self.inputDataExt == '.VTK':
+            self.createExportVTK()
+            vtkVariables = [self.fileLead, self.vtklocsOUT, self.fileMid, self.vtkDataOUT, self.fileTail]
+            with open(self.exportTXT.GetValue(), 'w', newline='') as outFP:
+                writer = csv.writer(outFP, delimiter='\t')
+                for v in vtkVariables:
+                    writer.writerows(v)
+
+        elif self.inputDataExt == '.XYZ':
+            print("Export instructions for .XYZ file have not been coded yet")
+        else:
+            dataDF,keepLength = self.createExportDF()
+
+            dataLeadDF = pd.DataFrame()
+            dataTailDF = pd.DataFrame()
+
+            #Create Data Lead
+            dataLeadDF[0] = self.dataLead
+
+            if self.inputDataExt == '.DAT (SAS)':
+                dataLeadList = []
+                dataLeadList.append(self.dataLead[0][0])
+                dataLeadList.append(self.dataLead[1][0])
+                dataLeadList.append(11)
+                dataLeadList.append(self.dataLead[2][0])
+                dataLeadList.append('Type of measurement (0=app.resistivity,1=resistance)')
+                dataLeadList.append(0)
+                dataLeadList.append(keepLength)
+                dataLeadList.append(2)
+                dataLeadList.append(0)
+
+                dataLeadDF = pd.DataFrame(dataLeadList)
+            else:
+                dataLeadDF.iloc[4,0] = 'Type of measurement (0=app.resistivity,1=resistance)'
+                dataLeadDF.iloc[6,0] = str(int(keepLength))
+
+            for c in range(1, 10):
+                dataLeadDF[int(c)] = [None, None, None, None, None, None, None, None, None]
+
+            #Create Data Tail
+            for c in range(0, 10):
+                if c < 1:
+                    dataTailDF[int(c)] = [0,     0,     0,    0,   0,    0,    0]
+                else:
+                    dataTailDF[int(c)] = [None, None, None, None, None, None, None]
+
+            dataDF.columns = [0,1,2,3,4,5,6,7,8,9]
+            DFList = [dataLeadDF, dataDF, dataTailDF]
+
+            self.exportDataframe = pd.concat(DFList, ignore_index=True, axis=0)
+
+            self.exportDataframe.to_csv(self.exportTXT.GetValue(), sep="\t", index=False, header=False)
+    
+    #Coupled with onExport, reformats edited data into output format
+    def createExportDF(self):
+        dataDF = pd.DataFrame(columns=["NoElectrodes",'A(x)', 'A(z)', 'B(x)', 'B(z)', 'M(x)', 'M(z)', 'N(x)', 'N(z)', 'Resistance'])
 
         tempList = []
         noneList = []
@@ -1458,27 +2192,27 @@ class ERTAPP(wx.Frame):
         for i in enumerate(self.dataframeEDIT["Keep"]):
             if i[1]:
                 keepRows.append(i[0])
-                tempList.append(4)
+                tempList.append(4)#number of electrodes
                 noneList.append(None)
-        dataDF[0] = noneList
+        dataDF['NoElectrodes'] = tempList #Add number of electrodes to first column
         keepLength = len(keepRows)
 
-        if self.inputDataExt == '.TXT (LS)':
+        if self.inputDataExt == '.TXT (LS)' or self.inputDataExt == '.DAT (LS)' or self.inputDataExt == '.DAT (SAS)' :
             cols = [7,5,1,3]
-            valCol = 28 #app resistivity
-        elif self.inputDataExt =='.DAT (LS)':
-            cols = [5,7,3,1]
-            valCol = 9
-        else:
-            cols = [1,3,7,5]
-            valCol = 3
+            valCol = 14 #14 app resistivity; 13 is Resistance
+            zCols = [8, 6, 2, 4]
 
+        #Add electrode XDistances to dataDF
+        keepElectrodes = []
         j=0
         for c in cols:
             for r in enumerate(keepRows):
-                dataDF.iloc[int(r[0]), int(c)] = round(float(self.xDF.iloc[int(r[1]),int(j)]),2)
+                dataDF.iloc[int(r[0]), int(c)] = self.dataframeEDIT.iloc[int(r[1]),int(c)]
+                keepElectrodes.append(self.dataframeEDIT.iloc[int(r[0]), int(c)])
             j+=1
+        keepElectrodes = list(sorted(np.unique(keepElectrodes)))
 
+        #Run getClosestElev() if data has elevations and is .DAT (LS) style or if includeTopoBx checkbox is marked
         if self.includeTopoBx.GetValue() or (float(self.dataframeEDIT.iloc[0,self.xCols[0]+1]) > 0.0 and self.inputDataExt == '.DAT (LS)'):
             self.getClosestElev()
         else:
@@ -1486,70 +2220,95 @@ class ERTAPP(wx.Frame):
             for i in self.electrodes:
                 self.electrodeElevs.append(0.00)
 
-        zCols = [2,4,6,8]
+        #if self.includeTopoBx.GetValue():
+        #    if self.dataframeEDIT.loc[:,'PseudoZ'].sum(axis = 0) > 0:
+        #        self.dataframeEDIT['PtElev'] = self.dataframeEDIT['SurfElevs'] - self.dataframeEDIT['Depth']
+        #    else:
+        #        self.dataframeEDIT['PtElevs'] = self.dataframeEDIT['SurfElevs'] + self.dataframeEDIT['Depth']
+        #else:
+        #    self.dataframeEDIT['SurfElevs'] = zeroList
+        #    self.dataframeEDIT['PtElevs'] = self.dataframeEDIT['SurfElevs'] - self.dataframeEDIT['Depth']
+
+        
+        zeroList = [0 for k in range(len(self.dataframeEDIT['Keep']))]  # blank list
 
         j = 0
         for r in enumerate(self.dataframeEDIT["Keep"]):
-            if r[1]:
-                dataDF.iloc[j,9] = self.dataframeEDIT.iloc[r[0],valCol]
 
+            if r[1]:
+                dataDF.loc[int(j),'Resistance'] = self.dataframeEDIT.iloc[int(r[0]),int(valCol)]
                 for z in zCols:
                     i = self.electrodes.index(float(dataDF.iloc[j,z-1]))
                     dataDF.iloc[j,z] = round(self.electrodeElevs[i],2)
-
                 j+=1
 
-        dataDF[0] = tempList
+        if self.reverseBx.GetValue() == True:
+            xDistCols = [1, 3, 5, 7]
 
-        #Create Data Lead
-        dataLeadDF[0] = self.dataLead
+            for i in xDistCols:
+                for r in enumerate(dataDF.iloc[:,i]):
+                    dataDF.iloc[r[0],i] = self.maxXDist-r[1] #Subtract each item by the "max x distance", thereby reversing the x-Dist Values
+        return dataDF, keepLength
 
-        if self.inputDataExt == '.DAT (SAS)':
-            dataLeadList = []
-            dataLeadList.append(self.dataLead[0][0])
-            dataLeadList.append(self.dataLead[1][0])
-            dataLeadList.append(11)
-            dataLeadList.append(self.dataLead[2][0])
-            dataLeadList.append('Type of measurement (0=app.resistivity,1=resistance)')
-            dataLeadList.append(0)
-            dataLeadList.append(keepLength)
-            dataLeadList.append(2)
-            dataLeadList.append(0)
+    def createExportVTK(self):
+        # self.GPSDF.columns = ['GPS_XDist', 'GPS_X', 'GPS_Y', 'GPS_Labels']
+        xPtCols = [0,3,6,9]
+        yPtCols = [1,4,7,10]
+        zPtCols = [2,5,8,11]
 
-            dataLeadDF = pd.DataFrame(dataLeadList)
-        else:
-            dataLeadDF.iloc[4,0] = 'Type of measurement (0=app.resistivity,1=resistance)'
-            dataLeadDF.iloc[6,0] = str(int(keepLength))
+        minGPSDist = self.GPSDF['GPS_XDist'].min()
+        minVTKxDist = min(self.xData)
+        maxGPSDist = self.GPSDF['GPS_XDist'].max()
+        maxVTKxDist = max(self.xData)
 
-        for c in range(1, 10):
-            dataLeadDF[int(c)] = [None, None, None, None, None, None, None, None, None]
-
-        #Create Data Tail
-        for c in range(0, 10):
-            if c < 1:
-                dataTailDF[int(c)] = [0,     0,     0,    0,   0,    0,    0]
+        if maxVTKxDist > maxGPSDist or minGPSDist > minVTKxDist:
+            if maxVTKxDist > maxGPSDist:
+                wx.LogError("File format error. Maximum GPS X-Distance is greater than maximum VTK X-Distance.")
             else:
-                dataTailDF[int(c)] = [None, None, None, None, None, None, None]
+                wx.LogError("File format error. Minimum GPS X-Distance is less than minimum VTK X-Distance.")
+        else:
 
-        #print(dataLeadDF)
-        #print(dataDF)
-        #print(dataTailDF)
+            self.vtklocsOUT = self.vtklocsIN.copy()
+            for row in enumerate(self.vtklocsIN):
+                for col in enumerate(row[1]):
+                    if col[0] in xPtCols:
+                        ptXDist = float(col[1]) #xDist of current point
+                        ptRow = int(row[0])
+                        ptXCol = int(col[0])
+                        ptYCol = int(col[0] + 1)
+                        
+                        gpsIndex = np.argmin(np.abs(np.array(self.GPSDF['GPS_XDist']) - ptXDist))#finds index of closest elevation
+                        nearestGPSxDist = self.GPSDF.loc[gpsIndex,'GPS_XDist']
+                        nearestGPSXVal = self.GPSDF.loc[gpsIndex,'GPS_X']
+                        nearestGPSYVal = self.GPSDF.loc[gpsIndex,'GPS_Y']
 
-        DFList = [dataLeadDF, dataDF, dataTailDF]
+                        if nearestGPSxDist == ptXDist:
+                            self.vtklocsOUT[ptRow][ptXCol] = nearestGPSXVal
+                            self.vtklocsOUT[ptRow][ptYCol] = nearestGPSYVal
+                        elif nearestGPSxDist >= ptXDist:
+                            mapNum = nearestGPSxDist - ptXDist
+                            mapDenom = nearestGPSxDist - self.GPSDF.loc[gpsIndex-1,'GPS_XDist']
+                            mVal = float(mapNum/mapDenom)
+                            self.vtklocsOUT[ptRow][ptXCol] = nearestGPSXVal - (nearestGPSXVal-self.GPSDF.loc[gpsIndex-1,'GPS_X'])*mVal
+                            self.vtklocsOUT[ptRow][ptYCol] = nearestGPSYVal - (nearestGPSYVal-self.GPSDF.loc[gpsIndex-1,'GPS_Y'])*mVal
+                        else: #if the nearest TopoxDist is less than our current electrode's x-dist
+                            mapNum = ptXDist - nearestGPSxDist
+                            mapDenom = self.GPSDF.loc[gpsIndex+1,'GPS_XDist']-nearestGPSxDist
+                            mVal = float(mapNum/mapDenom)
+                            self.vtklocsOUT[ptRow][ptXCol] = nearestGPSXVal + (self.GPSDF.loc[gpsIndex+1,'GPS_X'] - nearestGPSXVal)*mVal
+                            self.vtklocsOUT[ptRow][ptYCol] = nearestGPSYVal + (self.GPSDF.loc[gpsIndex+1,'GPS_Y'] - nearestGPSYVal)*mVal
+        
+        self.vtkDataOUT = self.vtkDataIN.copy()
 
-        print("Concatenated: ")
-        self.exportDataframe = pd.concat(DFList, ignore_index=True, axis=0)
-
-        print(self.exportDataframe)
-        self.exportDataframe.to_csv(self.exportTXT.GetValue(), sep="\t", index=False, header=False)
-
+    #Event that runs the closeProgram function (to close program) when the cancel button is pushed
     def onCancel(self, event):
         self.closeProgram()
 
+    #Function that closes program
     def closeProgram(self):
         self.Close()
 
-# Run the program
+# Runs the program
 if __name__ == '__main__':
     app = wx.App()
     frame = ERTAPP().Show()
